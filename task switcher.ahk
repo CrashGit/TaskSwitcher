@@ -2,7 +2,7 @@
 #SingleInstance
 
 Suspend(true)
-#Include ..\lib\Gdip_All.ahk
+#Include ..\..\lib\Gdip_All.ahk
 
 ;============================================================================================
 ; @Auto_Execute

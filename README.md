@@ -3,6 +3,8 @@ Alternative for Alt-Tab task switching.
 
 Disclaimer: AI was used for most of the graphics-related things as I am not familiar enough with the GDI+ api.
 
+Dependencies: Gdip_All.ahk | I got mine from https://github.com/buliasz/AHKv2-Gdip/blob/master/Gdip_All.ahk
+
 &nbsp;
 
 Example image using default options:
