@@ -1,6 +1,9 @@
 # TaskSwitcher
 Alternative for Alt-Tab task switching.
+
 Disclaimer: AI was used for most of the graphics-related things as I am not familiar enough with the GDI+ api.
+
+&nbsp;
 
 Example image using default options:
 
