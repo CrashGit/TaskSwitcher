@@ -80,6 +80,11 @@ class TaskSwitcher {
         this.OnKeyPress  := ObjBindMethod(this, '__OnKeyPress')
         this.OnMouseWheel := ObjBindMethod(this, '__OnMouseWheel')
 
+        ; closes task switcher if left click happens outside the menu
+        HotIf((*) => TaskSwitcher.isOpen && !TaskSwitcher.hasMouseOver)
+        Hotkey('~*LButton', (*) => this.CloseMenu())
+        HotIf()
+
         ; GDI+ objects
         this.hBitmap := 0
         this.hdc := 0
@@ -91,9 +96,6 @@ class TaskSwitcher {
 
         ; store all windows for filtering
         this.allWindows := []
-
-        ; keeps track of SetWinEventHook instance
-        this._eventHook := 0
 
         ; dimensions
         this.maxWidth := 700
@@ -122,9 +124,8 @@ class TaskSwitcher {
         OnMessage(0x201, this.OnLeftClick)
         OnMessage(0x20A, this.OnMouseWheel)
         OnMessage(0x100, this.OnKeyPress)
-        this._eventHook := SetWinEventHook(__OnWinEvent, 0x0003, 0x0003)
 
-        windows := this.__RefreshWindows()
+        this.__RefreshWindows()
         this.__CreateMenu()
     }
 
@@ -137,7 +138,6 @@ class TaskSwitcher {
         OnMessage(0x201, this.OnLeftClick, 0)
         OnMessage(0x100, this.OnKeyPress,  0)
         OnMessage(0x20A, this.OnMouseWheel, 0)
-        this._eventHook.UnHook()
 
         if this.scrollTimer {
             SetTimer(this.scrollTimer, 0)
@@ -729,7 +729,6 @@ class TaskSwitcher {
             }
         }
 
-
         if this.searchText = this.defaultSearchText {
             return
         } else if StrLen(this.searchText) = 0 {
@@ -974,59 +973,5 @@ class TaskSwitcher {
             }
         }
         this.iconCache := Map()
-    }
-}
-
-/**
- * @author @plankoe
- * @source https://old.reddit.com/r/AutoHotkey/comments/18o171o/ahkv2_had_its_first_birthday_as_of_yesterday_its/kekm6xy/
- */
-; The callback for SetWinEventHook receives 7 parameters when called.
-__OnWinEvent(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dwmsEventTime) {
-    ; if idObject is 0xFFFFFFF7, this event was triggered by cursor.
-    ; Since EVENT_OBJECT_LOCATIONCHANGE is one of the specified events, this function will trigger whenever the cursor is moved.
-    ; if you don't want to monitor events from cursor, put a Return.
-    if idObject = 0xFFFFFFF7 {
-        return
-    }
-
-    ; example if you only want events triggered by a window:
-    if idObject != 0 {
-        return
-    }
-
-    ; If you don't want to receive events triggered by a child element, make sure idChild is 0.
-    if idChild != 0 {
-        return
-    }
-
-    if hwnd != TaskSwitcher.menu.Hwnd {
-        TaskSwitcher.CloseMenu
-    }
-}
-
-class SetWinEventHook {
-   /**
-    * @param function - function to call when event is triggered
-    * @param minEvent - minimum event to monitor
-    * @param maxEvent - max event to monitor
-    * @param pid - specify which process to monitor. Use 0 to receive events from all windows.
-    * @param flags - flags that specify which events to skip. Default is 0x2 (Prevent AutoHotkey itself from triggering events). Use 0 to allow AutoHotkey to trigger events.
-    */
-    __New(function, minEvent := 0x00000001, maxEvent := 0x7FFFFFFF, pid := 0, flags := 0x2) {
-        this.callback := CallbackCreate(function, "F", 7)
-        this.Hook := DllCall("SetWinEventHook"
-            , "UInt" , minEvent       ; UINT eventMin
-            , "UInt" , maxEvent       ; UINT eventMax
-            , "Ptr"  , 0              ; HMODULE hmodWinEventProc
-            , "Ptr"  , this.callback  ; WINEVENTPROC lpfnWinEventProc
-            , "UInt" , pid            ; DWORD idProcess
-            , "UInt" , 0              ; DWORD idThread
-            , "UInt" , flags)         ; UINT dwflags, 0x0|0x2 = OutOfContext|SkipOwnProcess
-    }
-
-    UnHook() {
-        DllCall("UnhookWinEvent", "Ptr", this.Hook)
-        CallbackFree(this.callback)
     }
 }
