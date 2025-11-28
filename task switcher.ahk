@@ -105,9 +105,11 @@ class TaskSwitcher {
         this.dividerHeight := 1
 
         this.scrollOffset := 0
-        this.targetScrollOffset := 0  ; Target position for smooth scrolling
+        this.targetScrollOffset := 0
         this.scrollSpeed := 20
         this.maxVisibleRows := 8
+        this.hoveredCloseButton := 0
+        this.closeButtonRects := []
     }
 
     static OpenMenu() {
@@ -197,6 +199,13 @@ class TaskSwitcher {
         }
     }
 
+    static __CloseWindow(window) {
+        WinClose(window.hwnd)
+        Sleep(100)
+        this.__RefreshWindows()
+        this.__RecreateMenuForFiltering()
+    }
+
     static __CalculateTotalHeight() {
         totalRows := this.menu.windows.Length
 
@@ -233,7 +242,6 @@ class TaskSwitcher {
 
         ; draw input text (right-aligned)
         displayText := this.inputText . Chr(0x200B)
-
         inputOptions := 'x' (this.maxWidth - 380) ' y16 Right'
         inputOptions .= (this.inputText = this.defaultSearchText)
             ? 's16 Italic c' this.searchTextColor
@@ -247,18 +255,19 @@ class TaskSwitcher {
             Gdip_TextToGraphics(this.hGraphics, this.inputText, inputOptions, 'Arial', 370, this.bannerHeight)
         }
 
-        ; SET CLIPPING - only draw content below banner
+        ; set clipping - only draw content below banner
         Gdip_SetClipRect(this.hGraphics, 0, this.bannerHeight, this.maxWidth, totalHeight - this.bannerHeight)
 
         ; draw window rows with pixel offset
         rowWithDivider := this.rowHeight + this.dividerHeight
         this.windowRects := []
+        this.closeButtonRects := []  ; Track close button positions
 
         for index, window in this.menu.windows {
-            ; Calculate Y position with scroll offset
+            ; calculate Y position with scroll offset
             rowY := this.bannerHeight + ((index - 1) * rowWithDivider) - this.scrollOffset
 
-            ; Skip only if COMPLETELY outside visible area
+            ; skip only if COMPLETELY outside visible area
             if rowY + this.rowHeight < this.bannerHeight || rowY > totalHeight {
                 continue
             }
@@ -289,8 +298,40 @@ class TaskSwitcher {
             titleX := iconX + this.iconSize + 15
             programOptions := 'x' titleX ' y' (rowY + 8) ' s18 Bold cFF' SubStr(Format('{:06X}', textColor), 3)
             titleOptions := 'x' titleX ' y' (rowY + 28) ' s16 cFF' SubStr(Format('{:06X}', textColor), 3)
-            Gdip_TextToGraphics(this.hGraphics, window.processName, programOptions, 'Arial', this.maxWidth - titleX - this.marginX, this.rowHeight)
-            Gdip_TextToGraphics(this.hGraphics, window.title, titleOptions, 'Arial', this.maxWidth - titleX - this.marginX, this.rowHeight)
+            Gdip_TextToGraphics(this.hGraphics, window.processName, programOptions, 'Arial', this.maxWidth - titleX - this.marginX - 40, this.rowHeight)
+            Gdip_TextToGraphics(this.hGraphics, window.title, titleOptions, 'Arial', this.maxWidth - titleX - this.marginX - 40, this.rowHeight)
+
+            ; draw close button (X)
+            closeButtonSize := 24
+            closeButtonX := this.maxWidth - this.marginX - closeButtonSize - 10
+            closeButtonY := rowY + (this.rowHeight - closeButtonSize) / 2
+
+            this.closeButtonRects.Push({
+                x: closeButtonX,
+                y: closeButtonY,
+                w: closeButtonSize,
+                h: closeButtonSize,
+                actualIndex: index
+            })
+
+            ; check if mouse is over this close button
+            isHoveringCloseButton := (this.hoveredCloseButton = index)
+
+            ; draw close button background (highlight if hovering)
+            if isHoveringCloseButton {
+                pBrushClose := Gdip_BrushCreateSolid(0x80FF0000)  ; Semi-transparent red
+            } else {
+                pBrushClose := Gdip_BrushCreateSolid(0x40FFFFFF)  ; Semi-transparent white
+            }
+            Gdip_FillEllipse(this.hGraphics, pBrushClose, closeButtonX, closeButtonY, closeButtonSize, closeButtonSize)
+            Gdip_DeleteBrush(pBrushClose)
+
+            ; draw X
+            pPen := Gdip_CreatePen(isHoveringCloseButton ? 0xFFFFFFFF : 0xFFAAAAAA, 2)
+            offset := 6
+            Gdip_DrawLine(this.hGraphics, pPen, closeButtonX + offset, closeButtonY + offset, closeButtonX + closeButtonSize - offset, closeButtonY + closeButtonSize - offset)
+            Gdip_DrawLine(this.hGraphics, pPen, closeButtonX + closeButtonSize - offset, closeButtonY + offset, closeButtonX + offset, closeButtonY + closeButtonSize - offset)
+            Gdip_DeletePen(pPen)
 
             ; draw divider (skip if outside visible area or last item)
             if index < this.menu.windows.Length {
@@ -303,7 +344,7 @@ class TaskSwitcher {
             }
         }
 
-        ; RESET CLIPPING
+        ; reset clipping
         Gdip_ResetClip(this.hGraphics)
 
         ; get current window position to maintain it
@@ -557,28 +598,44 @@ class TaskSwitcher {
         lastX := screenX
         lastY := screenY
 
+        ; check if hovering over a close button first
+        newHoveredCloseButton := 0
+        for rect in this.closeButtonRects {
+            if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
+                newHoveredCloseButton := rect.actualIndex
+                break
+            }
+        }
+
+        ; check which row mouse is over
         newHover := this.selectedRow
-        for index, rect in this.windowRects {
+        for rect in this.windowRects {
             if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
                 newHover := rect.actualIndex
                 break
             }
         }
 
-        if newHover != this.selectedRow {
+        if newHover != this.selectedRow || newHoveredCloseButton != this.hoveredCloseButton {
             this.selectedRow := newHover
+            this.hoveredCloseButton := newHoveredCloseButton
             this.__DrawMenu()
         }
     }
 
     static __OnLeftClick(wParam, lParam, msg, hwnd) {
-        if hwnd != this.menu.hwnd {
-            return
-        }
-
         x := lParam & 0xFFFF
         y := lParam >> 16
 
+        ; check if clicking a close button
+        for rect in this.closeButtonRects {
+            if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
+                this.__CloseWindow(this.menu.windows[rect.actualIndex])
+                return
+            }
+        }
+
+        ; otherwise check for row clicks
         for rect in this.windowRects {
             if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
                 this.__ActivateWindow(rect.window)
