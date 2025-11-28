@@ -251,7 +251,7 @@ class TaskSwitcher {
             pBrushDebug := Gdip_BrushCreateSolid(this.searchBackgroundColor)
             Gdip_FillRoundedRectangle(this.hGraphics, pBrushDebug, rect.x, rect.y, rect.w, rect.h, rect.r)
             Gdip_DeleteBrush(pBrushDebug)
-            Gdip_TextToGraphics(this.hGraphics, this.searchText, inputOptions, 'Arial', 370, this.bannerHeight)
+            Gdip_TextToGraphics(this.hGraphics, displayText, inputOptions, 'Arial', 370, this.bannerHeight)
         }
 
         ; set clipping - only draw content below banner
