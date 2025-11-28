@@ -115,15 +115,15 @@ class TaskSwitcher {
             return this.CloseMenu()
         }
 
-        windows := this.__RefreshWindows()
-        this.__CreateMenu()
-
         ; setup message handlers
         OnMessage(0x200, this.OnMouseMove)
         OnMessage(0x201, this.OnLeftClick)
         OnMessage(0x20A, this.OnMouseWheel)
         OnMessage(0x100, this.OnKeyPress)
         this._eventHook := SetWinEventHook(__OnWinEvent, 0x0003, 0x0003)
+
+        windows := this.__RefreshWindows()
+        this.__CreateMenu()
     }
 
     static CloseMenu() {
@@ -183,7 +183,6 @@ class TaskSwitcher {
         UpdateLayeredWindow(this.menu.Hwnd, this.hdc, centerX, centerY, this.maxWidth, totalHeight)
         this.menu.Show()
 
-
         FrameShadow(hwnd) {
             DllCall('dwmapi.dll\DwmIsCompositionEnabled', 'Int*', &dwmEnabled:=0)
 
@@ -229,12 +228,13 @@ class TaskSwitcher {
         Gdip_DeleteBrush(pBrushBanner)
 
         ; draw banner text
-        options := 'x' this.marginX ' y15 s18 Bold c' this.bannerTextColor
+        options := 'x' this.marginX ' y16 s18 Bold c' this.bannerTextColor
         Gdip_TextToGraphics(this.hGraphics, this.bannerText, options, 'Arial', this.maxWidth - (this.marginX * 2), this.bannerHeight)
 
         ; draw input text (right-aligned)
         displayText := this.inputText . Chr(0x200B)
-        inputOptions := 'x' (this.maxWidth - 380) ' y15 Right'
+
+        inputOptions := 'x' (this.maxWidth - 380) ' y16 Right'
         inputOptions .= (this.inputText = this.defaultSearchText)
             ? 's16 Italic c' this.searchTextColor
             : 's18 Bold c' this.bannerTextColor

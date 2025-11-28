@@ -17,6 +17,6 @@ The script is meant to be a faster means of activating open programs. It gives y
 See the file for an example of how to call it or change options.
 
 
-Example image using default options:
+##### Example image using default options:
 
 ![](https://github.com/CrashGit/TaskSwitcher/blob/main/example.png)
