@@ -193,9 +193,8 @@ class TaskSwitcher {
 
     static __CloseWindow(window) {
         WinClose(window.hwnd)
-        Sleep(100)
-        this.__RefreshWindows()
-        this.__RecreateMenuForFiltering()
+        WinWaitClose(window.hwnd)
+        this.__UpdateMenu()
     }
 
     static __CalculateTotalHeight() {
@@ -629,6 +628,7 @@ class TaskSwitcher {
         x := lParam & 0xFFFF
         y := lParam >> 16
 
+        ; check if clicking in the search bar
         if this.searchText = this.defaultSearchText {
             if this.searchBackgroundColor != this.searchTextColor {
                 rect := this.searchBackgroundRect
@@ -697,6 +697,10 @@ class TaskSwitcher {
 
         case 'Space':
             this.__AddInputCharacter(' ')
+
+        case 'NumpadDel':
+            this.__CloseWindow(this.menu.windows[this.selectedRow])
+            return
 
         default:
             ; get the actual character including shift state
@@ -803,11 +807,7 @@ class TaskSwitcher {
     static __UpdateHoverFromMouse() {
         ; get current mouse position
         CoordMode('Mouse', 'Screen')
-        MouseGetPos(&mouseX, &mouseY, &winId)
-
-        if winId != this.menu.Hwnd {
-            return
-        }
+        MouseGetPos(&mouseX, &mouseY)
 
         ; convert screen to client coordinates
         pt := Buffer(8)
