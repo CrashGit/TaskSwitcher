@@ -713,7 +713,9 @@ class TaskSwitcher {
         }
 
 
-        if StrLen(this.searchText) = 0 {
+        if this.searchText = this.defaultSearchText {
+            ; do nothing
+        } else if StrLen(this.searchText) = 0 {
             this.searchText := this.defaultSearchText
         } else {
             matches := []
