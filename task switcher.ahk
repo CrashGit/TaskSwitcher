@@ -194,7 +194,24 @@ class TaskSwitcher {
     static __CloseWindow(window) {
         WinClose(window.hwnd)
         WinWaitClose(window.hwnd)
-        this.__UpdateMenu()
+
+        this.__RefreshWindows()
+        this.__ApplySearchFilter()
+        this.__RecreateMenuForFiltering()
+    }
+
+    static __ApplySearchFilter() {
+        if this.searchText != this.defaultSearchText && StrLen(this.searchText) > 0 {
+            matches := []
+            for win in this.allWindows {
+                if InStr(win.processName, this.searchText) || InStr(win.title, this.searchText) {
+                    matches.Push(win)
+                }
+            }
+            this.menu.windows := matches
+        } else {
+            this.menu.windows := this.allWindows.Clone()
+        }
     }
 
     static __CalculateTotalHeight() {
@@ -714,7 +731,7 @@ class TaskSwitcher {
 
 
         if this.searchText = this.defaultSearchText {
-            ; do nothing
+            return
         } else if StrLen(this.searchText) = 0 {
             this.searchText := this.defaultSearchText
         } else {
