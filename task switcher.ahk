@@ -151,21 +151,13 @@ class TaskSwitcher {
     static __CreateMenu() {
         this.windowRects := []
         this.selectedRow := 1
-        this.inputText := this.defaultSearchText
+        this.searchText := this.defaultSearchText
         this.scrollOffset := 0
         this.targetScrollOffset := 0    ; reset target
         this.scrollTimer := 0           ; reset timer
 
         totalHeight := this.__CalculateTotalHeight()
         this.__Init_GDIP(totalHeight)
-
-        ; create GDI+ bitmap and graphics
-        this.hBitmap := CreateDIBSection(this.maxWidth, totalHeight)
-        this.hdc := CreateCompatibleDC()
-        this.obm := SelectObject(this.hdc, this.hBitmap)
-        this.hGraphics := Gdip_GraphicsFromHDC(this.hdc)
-        Gdip_SetSmoothingMode(this.hGraphics, 4)
-        Gdip_SetTextRenderingHint(this.hGraphics, 3)
 
         ; initial draw
         this.__DrawMenu()
@@ -241,18 +233,18 @@ class TaskSwitcher {
         Gdip_TextToGraphics(this.hGraphics, this.bannerText, options, 'Arial', this.maxWidth - (this.marginX * 2), this.bannerHeight)
 
         ; draw input text (right-aligned)
-        displayText := this.inputText . Chr(0x200B)
+        displayText := this.searchText . Chr(0x200B)
         inputOptions := 'x' (this.maxWidth - 380) ' y16 Right'
-        inputOptions .= (this.inputText = this.defaultSearchText)
+        inputOptions .= (this.searchText = this.defaultSearchText)
             ? 's16 Italic c' this.searchTextColor
             : 's18 Bold c' this.bannerTextColor
         Gdip_TextToGraphics(this.hGraphics, displayText, inputOptions, 'Arial', 370, this.bannerHeight)
 
         if this.searchBackgroundColor != this.searchTextColor {
             pBrushDebug := Gdip_BrushCreateSolid(this.searchBackgroundColor)
-            Gdip_FillRectangle(this.hGraphics, pBrushDebug, this.maxWidth - 380, 10, 370, 30)
+            Gdip_FillRoundedRectangle(this.hGraphics, pBrushDebug, this.maxWidth - 380, 10, 370, 30, 8)
             Gdip_DeleteBrush(pBrushDebug)
-            Gdip_TextToGraphics(this.hGraphics, this.inputText, inputOptions, 'Arial', 370, this.bannerHeight)
+            Gdip_TextToGraphics(this.hGraphics, this.searchText, inputOptions, 'Arial', 370, this.bannerHeight)
         }
 
         ; set clipping - only draw content below banner
@@ -426,6 +418,8 @@ class TaskSwitcher {
         this.hdc := CreateCompatibleDC()
         this.obm := SelectObject(this.hdc, this.hBitmap)
         this.hGraphics := Gdip_GraphicsFromHDC(this.hdc)
+        Gdip_SetSmoothingMode(this.hGraphics, 4)
+        Gdip_SetTextRenderingHint(this.hGraphics, 3)
     }
 
     static __GetProgramName(path) {
@@ -653,11 +647,11 @@ class TaskSwitcher {
 
         switch key {
         case 'Escape':
-            if this.inputText = this.defaultSearchText {
+            if this.searchText = this.defaultSearchText {
                 this.CloseMenu()
                 return
             } else {
-                this.inputText := this.defaultSearchText
+                this.searchText := this.defaultSearchText
                 matches := this.allWindows.Clone()
             }
 
@@ -669,9 +663,9 @@ class TaskSwitcher {
 
         case 'Backspace':
             if GetKeyState('Control') {
-                this.inputText := this.defaultSearchText
-            } else if this.inputText != this.defaultSearchText {
-                this.inputText := SubStr(this.inputText, 1, -1)
+                this.searchText := this.defaultSearchText
+            } else if this.searchText != this.defaultSearchText {
+                this.searchText := SubStr(this.searchText, 1, -1)
             }
 
         case 'NumpadUp':
@@ -697,15 +691,15 @@ class TaskSwitcher {
         }
 
 
-        if this.inputText = this.defaultSearchText {
+        if this.searchText = this.defaultSearchText {
             matches := this.allWindows.Clone()
-        } else if StrLen(this.inputText) = 0 {
-            this.inputText := this.defaultSearchText
+        } else if StrLen(this.searchText) = 0 {
+            this.searchText := this.defaultSearchText
             matches := this.allWindows.Clone()
         } else {
             matches := []
             for window in this.allWindows {
-                if InStr(window.processName, this.inputText) || InStr(window.title, this.inputText) {
+                if InStr(window.processName, this.searchText) || InStr(window.title, this.searchText) {
                     matches.Push(window)
                 }
             }
@@ -731,10 +725,10 @@ class TaskSwitcher {
     }
 
     static __AddInputCharacter(input) {
-        if this.inputText = this.defaultSearchText {
-            this.inputText := StrUpper(input)
+        if this.searchText = this.defaultSearchText {
+            this.searchText := StrUpper(input)
         } else {
-            this.inputText .= StrUpper(input)
+            this.searchText .= StrUpper(input)
         }
     }
 
