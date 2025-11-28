@@ -19,10 +19,10 @@ OnExit((*) => Gdip_Shutdown(pToken))
 TaskSwitcher({
     backgroundColor: 0xFF111111,
     bannerColor: 0xFF00BB00,
-    bannerText: 'Open Programs',
+    bannerText: 'Tasks',
     alwaysHighlightFirst: true,
     rowHighlightColor: 0xFF555555,
-    defaultSearchText: 'Start typing to search for program',
+    defaultSearchText: 'Search...',
     searchBackgroundColor: 0xFF333333
 })
 
@@ -241,8 +241,16 @@ class TaskSwitcher {
         Gdip_TextToGraphics(this.hGraphics, displayText, inputOptions, 'Arial', 370, this.bannerHeight)
 
         if this.searchBackgroundColor != this.searchTextColor {
+            rect := {
+                x: this.maxWidth//2 + this.marginX,
+                y: 8,
+                w: this.maxWidth//2 - (this.marginX * 2) + 4,
+                h: 34,
+                r: 8
+            }
+            this.searchBackgroundRect := rect
             pBrushDebug := Gdip_BrushCreateSolid(this.searchBackgroundColor)
-            Gdip_FillRoundedRectangle(this.hGraphics, pBrushDebug, this.maxWidth - 380, 10, 370, 30, 8)
+            Gdip_FillRoundedRectangle(this.hGraphics, pBrushDebug, rect.x, rect.y, rect.w, rect.h, rect.r)
             Gdip_DeleteBrush(pBrushDebug)
             Gdip_TextToGraphics(this.hGraphics, this.searchText, inputOptions, 'Arial', 370, this.bannerHeight)
         }
@@ -620,6 +628,17 @@ class TaskSwitcher {
     static __OnLeftClick(wParam, lParam, msg, hwnd) {
         x := lParam & 0xFFFF
         y := lParam >> 16
+
+        if this.searchText = this.defaultSearchText {
+            if this.searchBackgroundColor != this.searchTextColor {
+                rect := this.searchBackgroundRect
+                if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.h {
+                    this.searchText := ''
+                    this.__DrawMenu()
+                    return
+                }
+            }
+        }
 
         ; check if clicking a close button
         for rect in this.closeButtonRects {
