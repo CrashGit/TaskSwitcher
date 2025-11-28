@@ -231,13 +231,6 @@ class TaskSwitcher {
         options := 'x' this.marginX ' y16 s18 Bold c' this.bannerTextColor
         Gdip_TextToGraphics(this.hGraphics, this.bannerText, options, 'Arial', this.maxWidth - (this.marginX * 2), this.bannerHeight)
 
-        ; draw input text (right-aligned)
-        displayText := this.searchText . Chr(0x200B)
-        inputOptions := 'x' (this.maxWidth - 380) ' y16 Right'
-        inputOptions .= (this.searchText = this.defaultSearchText)
-            ? 's16 Italic c' this.searchTextColor
-            : 's18 Bold c' this.bannerTextColor
-        Gdip_TextToGraphics(this.hGraphics, displayText, inputOptions, 'Arial', 370, this.bannerHeight)
 
         if this.searchBackgroundColor != this.searchTextColor {
             rect := {
@@ -251,8 +244,15 @@ class TaskSwitcher {
             pBrushDebug := Gdip_BrushCreateSolid(this.searchBackgroundColor)
             Gdip_FillRoundedRectangle(this.hGraphics, pBrushDebug, rect.x, rect.y, rect.w, rect.h, rect.r)
             Gdip_DeleteBrush(pBrushDebug)
-            Gdip_TextToGraphics(this.hGraphics, displayText, inputOptions, 'Arial', 370, this.bannerHeight)
         }
+
+        ; draw input text (right-aligned)
+        displayText := this.searchText . Chr(0x200B)
+        inputOptions := 'x' (this.maxWidth - 380) ' y16 Right'
+        inputOptions .= (this.searchText = this.defaultSearchText)
+            ? 's16 Italic c' this.searchTextColor
+            : 's18 Bold c' this.bannerTextColor
+        Gdip_TextToGraphics(this.hGraphics, displayText, inputOptions, 'Arial', 370, this.bannerHeight)
 
         ; set clipping - only draw content below banner
         Gdip_SetClipRect(this.hGraphics, 0, this.bannerHeight, this.maxWidth, totalHeight - this.bannerHeight)
@@ -658,7 +658,7 @@ class TaskSwitcher {
     }
 
     static __OnKeyPress(wParam, lParam, msg, hwnd) {
-        static matches := this.allWindows.Clone()
+        matches := this.allWindows.Clone()
 
         vk := wParam
         sc := (lParam >> 16) & 0xFF
@@ -671,12 +671,11 @@ class TaskSwitcher {
                 return
             } else {
                 this.searchText := this.defaultSearchText
-                matches := this.allWindows.Clone()
             }
 
         case 'Enter':
             if matches.Length > 0 && this.selectedRow > 0 {
-                this.__ActivateWindow(matches[this.selectedRow])
+                this.__ActivateWindow(this.menu.windows[this.selectedRow])
             }
             return
 
@@ -714,11 +713,8 @@ class TaskSwitcher {
         }
 
 
-        if this.searchText = this.defaultSearchText {
-            matches := this.allWindows.Clone()
-        } else if StrLen(this.searchText) = 0 {
+        if StrLen(this.searchText) = 0 {
             this.searchText := this.defaultSearchText
-            matches := this.allWindows.Clone()
         } else {
             matches := []
             for window in this.allWindows {
