@@ -1,4 +1,4 @@
-#Requires AutoHotkey v2.0
+#Requires AutoHotkey v2.0-a
 #SingleInstance
 
 Suspend(true)
@@ -276,7 +276,6 @@ class TaskSwitcher {
         ; draw banner text
         options := 'x' this._marginX ' y16 s18 Bold c' this._bannerTextColor
         Gdip_TextToGraphics(this._hGraphics, this._bannerText, options, 'Arial', this._maxWidth - (this._marginX * 2), this._bannerHeight)
-
 
         if this._searchBackgroundColor != this._searchTextColor {
             rect := {
