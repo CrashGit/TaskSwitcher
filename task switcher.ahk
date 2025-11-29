@@ -46,7 +46,7 @@ $F1::TaskSwitcher.OpenMenuSorted()
 !Tab::TaskSwitcher.SelectNextProgram()
 +!Tab::TaskSwitcher.SelectPreviousProgram()
 *Alt up::TaskSwitcher.ActivateProgramAndCloseMenu()
-*WheelUp::TaskSwitcher.SelectNextProgram
+
 #HotIf
 
 
@@ -144,7 +144,7 @@ class TaskSwitcher {
         this._sortedWindows := sortedWindows
 
         ; setup message handlers
-        OnMessage(0x200, this._)
+        OnMessage(0x200, this._OnMouseMove)
         OnMessage(0x201, this._OnLeftClick)
         OnMessage(0x20A, this._OnMouseWheel)
         OnMessage(0x100, this._OnKeyPress)
@@ -158,9 +158,9 @@ class TaskSwitcher {
             return
         }
 
-        OnMessage(0x200, this._, 0)
-        OnMessage(0x201, this._OnLeftClick, 0)
-        OnMessage(0x100, this._OnKeyPress,  0)
+        OnMessage(0x200, this._OnMouseMove,  0)
+        OnMessage(0x201, this._OnLeftClick,  0)
+        OnMessage(0x100, this._OnKeyPress,   0)
         OnMessage(0x20A, this._OnMouseWheel, 0)
 
         if this._scrollTimer {
@@ -419,11 +419,6 @@ class TaskSwitcher {
         centerY := top + (bottom - top - totalHeight) / 2
 
         UpdateLayeredWindow(this.menu.Hwnd, this._hdc, winX, centerY, this._maxWidth, totalHeight)
-    }
-
-    static __UpdateMenu() {
-        this.__RefreshWindows()
-        this.__RecreateMenuForFiltering()
     }
 
     static __RefreshWindows() {
