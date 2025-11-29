@@ -85,13 +85,9 @@ class TaskSwitcher {
     static __New() {
         this.menu := Gui('+AlwaysOnTop -SysMenu +ToolWindow -Caption +E0x80000')
 
-        this.menu.Show('NA')
-        WinSetAlwaysOnTop(true, 'ahk_id' this.menu.Hwnd)
-        this.menu.Hide()
-
-        this._OnMouseMove := ObjBindMethod(this, '__OnMouseMove')
-        this._OnLeftClick := ObjBindMethod(this, '__OnLeftClick')
-        this._OnKeyPress  := ObjBindMethod(this, '__OnKeyPress')
+        this._OnMouseMove  := ObjBindMethod(this, '__OnMouseMove')
+        this._OnLeftClick  := ObjBindMethod(this, '__OnLeftClick')
+        this._OnKeyPress   := ObjBindMethod(this, '__OnKeyPress')
         this._OnMouseWheel := ObjBindMethod(this, '__OnMouseWheel')
 
         ; closes task switcher if left click happens outside the menu
@@ -102,7 +98,7 @@ class TaskSwitcher {
         ; GDI+ objects
         this._hBitmap := 0
         this._hdc := 0
-        this._hGraphics := 0
+        this._pGraphics := 0
         this._pBitmap := 0
 
         this._sortedWindows := false
@@ -201,8 +197,6 @@ class TaskSwitcher {
         centerY := top + (bottom - top - totalHeight) / 2
 
         FrameShadow(this.menu.Hwnd)
-
-        ; use UpdateLayeredWindow instead of picture control
         UpdateLayeredWindow(this.menu.Hwnd, this._hdc, centerX, centerY, this._maxWidth, totalHeight)
         this.menu.Show()
 
@@ -265,17 +259,17 @@ class TaskSwitcher {
 
         ; clear background
         pBrush := Gdip_BrushCreateSolid(this._backgroundColor)
-        Gdip_FillRectangle(this._hGraphics, pBrush, 0, 0, this._maxWidth, totalHeight)
+        Gdip_FillRectangle(this._pGraphics, pBrush, 0, 0, this._maxWidth, totalHeight)
         Gdip_DeleteBrush(pBrush)
 
         ; draw banner
         pBrushBanner := Gdip_BrushCreateSolid(this._bannerColor)
-        Gdip_FillRectangle(this._hGraphics, pBrushBanner, 0, 0, this._maxWidth, this._bannerHeight)
+        Gdip_FillRectangle(this._pGraphics, pBrushBanner, 0, 0, this._maxWidth, this._bannerHeight)
         Gdip_DeleteBrush(pBrushBanner)
 
         ; draw banner text
         options := 'x' this._marginX ' y16 s18 Bold c' this._bannerTextColor
-        Gdip_TextToGraphics(this._hGraphics, this._bannerText, options, 'Arial', this._maxWidth - (this._marginX * 2), this._bannerHeight)
+        Gdip_TextToGraphics(this._pGraphics, this._bannerText, options, 'Arial', this._maxWidth - (this._marginX * 2), this._bannerHeight)
 
         if this._searchBackgroundColor != this._searchTextColor {
             rect := {
@@ -287,7 +281,7 @@ class TaskSwitcher {
             }
             this.searchBackgroundRect := rect
             pBrushDebug := Gdip_BrushCreateSolid(this._searchBackgroundColor)
-            Gdip_FillRoundedRectangle(this._hGraphics, pBrushDebug, rect.x, rect.y, rect.w, rect.h, rect.r)
+            Gdip_FillRoundedRectangle(this._pGraphics, pBrushDebug, rect.x, rect.y, rect.w, rect.h, rect.r)
             Gdip_DeleteBrush(pBrushDebug)
         }
 
@@ -297,10 +291,10 @@ class TaskSwitcher {
         inputOptions .= (this._searchText = this._defaultSearchText)
             ? 's16 Italic c' this._searchTextColor
             : 's18 Bold c' this._bannerTextColor
-        Gdip_TextToGraphics(this._hGraphics, displayText, inputOptions, 'Arial', 370, this._bannerHeight)
+        Gdip_TextToGraphics(this._pGraphics, displayText, inputOptions, 'Arial', 370, this._bannerHeight)
 
         ; set clipping - only draw content below banner
-        Gdip_SetClipRect(this._hGraphics, 0, this._bannerHeight, this._maxWidth, totalHeight - this._bannerHeight)
+        Gdip_SetClipRect(this._pGraphics, 0, this._bannerHeight, this._maxWidth, totalHeight - this._bannerHeight)
 
         ; draw window rows with pixel offset
         rowWithDivider := this._rowHeight + this._dividerHeight
@@ -328,7 +322,7 @@ class TaskSwitcher {
             ; highlight selected row
             if this._selectedRow = index {
                 pBrushHover := Gdip_BrushCreateSolid(this._rowHighlightColor)
-                Gdip_FillRectangle(this._hGraphics, pBrushHover, 0, rowY, this._maxWidth, this._rowHeight)
+                Gdip_FillRectangle(this._pGraphics, pBrushHover, 0, rowY, this._maxWidth, this._rowHeight)
                 Gdip_DeleteBrush(pBrushHover)
             }
 
@@ -342,8 +336,8 @@ class TaskSwitcher {
             titleX := iconX + this._iconSize + 15
             programOptions := 'x' titleX ' y' (rowY + 8) ' s18 Bold cFF' SubStr(Format('{:06X}', textColor), 3)
             titleOptions := 'x' titleX ' y' (rowY + 28) ' s16 cFF' SubStr(Format('{:06X}', textColor), 3)
-            Gdip_TextToGraphics(this._hGraphics, window.processName, programOptions, 'Arial', this._maxWidth - titleX - this._marginX - 40, this._rowHeight)
-            Gdip_TextToGraphics(this._hGraphics, window.title, titleOptions, 'Arial', this._maxWidth - titleX - this._marginX - 40, this._rowHeight)
+            Gdip_TextToGraphics(this._pGraphics, window.processName, programOptions, 'Arial', this._maxWidth - titleX - this._marginX - 40, this._rowHeight)
+            Gdip_TextToGraphics(this._pGraphics, window.title, titleOptions, 'Arial', this._maxWidth - titleX - this._marginX - 40, this._rowHeight)
 
             ; draw close button (X)
             closeButtonSize := 24
@@ -367,14 +361,14 @@ class TaskSwitcher {
             } else {
                 pBrushClose := Gdip_BrushCreateSolid(0x40FFFFFF)  ; Semi-transparent white
             }
-            Gdip_FillEllipse(this._hGraphics, pBrushClose, closeButtonX, closeButtonY, closeButtonSize, closeButtonSize)
+            Gdip_FillEllipse(this._pGraphics, pBrushClose, closeButtonX, closeButtonY, closeButtonSize, closeButtonSize)
             Gdip_DeleteBrush(pBrushClose)
 
             ; draw X
             pPen := Gdip_CreatePen(isHoveringCloseButton ? 0xFFFFFFFF : 0xFFAAAAAA, 2)
             offset := 6
-            Gdip_DrawLine(this._hGraphics, pPen, closeButtonX + offset, closeButtonY + offset, closeButtonX + closeButtonSize - offset, closeButtonY + closeButtonSize - offset)
-            Gdip_DrawLine(this._hGraphics, pPen, closeButtonX + closeButtonSize - offset, closeButtonY + offset, closeButtonX + offset, closeButtonY + closeButtonSize - offset)
+            Gdip_DrawLine(this._pGraphics, pPen, closeButtonX + offset, closeButtonY + offset, closeButtonX + closeButtonSize - offset, closeButtonY + closeButtonSize - offset)
+            Gdip_DrawLine(this._pGraphics, pPen, closeButtonX + closeButtonSize - offset, closeButtonY + offset, closeButtonX + offset, closeButtonY + closeButtonSize - offset)
             Gdip_DeletePen(pPen)
 
             ; draw divider (skip if outside visible area or last item)
@@ -382,14 +376,14 @@ class TaskSwitcher {
                 dividerY := rowY + this._rowHeight
                 if dividerY > this._bannerHeight && dividerY < totalHeight {
                     pBrushDiv := Gdip_BrushCreateSolid(this._dividerColor)
-                    Gdip_FillRectangle(this._hGraphics, pBrushDiv, this._marginX, dividerY, this._maxWidth - (this._marginX * 2), this._dividerHeight)
+                    Gdip_FillRectangle(this._pGraphics, pBrushDiv, this._marginX, dividerY, this._maxWidth - (this._marginX * 2), this._dividerHeight)
                     Gdip_DeleteBrush(pBrushDiv)
                 }
             }
         }
 
         ; reset clipping
-        Gdip_ResetClip(this._hGraphics)
+        Gdip_ResetClip(this._pGraphics)
 
         ; get current window position to maintain it
         this.menu.GetPos(&winX, &winY)
@@ -465,9 +459,9 @@ class TaskSwitcher {
         this._hBitmap := CreateDIBSection(this._maxWidth, totalHeight)
         this._hdc := CreateCompatibleDC()
         this.obm := SelectObject(this._hdc, this._hBitmap)
-        this._hGraphics := Gdip_GraphicsFromHDC(this._hdc)
-        Gdip_SetSmoothingMode(this._hGraphics, 4)
-        Gdip_SetTextRenderingHint(this._hGraphics, 3)
+        this._pGraphics := Gdip_GraphicsFromHDC(this._hdc)
+        Gdip_SetSmoothingMode(this._pGraphics, 4)
+        Gdip_SetTextRenderingHint(this._pGraphics, 3)
     }
 
     static __GetProgramName(path) {
@@ -568,9 +562,9 @@ class TaskSwitcher {
         pBitmap := this._iconCache[cacheKey]
         if pBitmap && Gdip_GetImageWidth(pBitmap) {
             ; Enable high quality scaling
-            Gdip_SetInterpolationMode(this._hGraphics, 7)  ; HighQualityBicubic
-            Gdip_DrawImage(this._hGraphics, pBitmap, x, y, this._iconSize, this._iconSize)
-            Gdip_SetInterpolationMode(this._hGraphics, 2)  ; Reset to default
+            Gdip_SetInterpolationMode(this._pGraphics, 7)  ; HighQualityBicubic
+            Gdip_DrawImage(this._pGraphics, pBitmap, x, y, this._iconSize, this._iconSize)
+            Gdip_SetInterpolationMode(this._pGraphics, 2)  ; Reset to default
         }
     }
 
@@ -982,9 +976,9 @@ class TaskSwitcher {
     }
 
     static __GDIP_Cleanup() {
-        if this._hGraphics {
-            Gdip_DeleteGraphics(this._hGraphics)
-            this._hGraphics := 0
+        if this._pGraphics {
+            Gdip_DeleteGraphics(this._pGraphics)
+            this._pGraphics := 0
         }
         if this._hdc {
             SelectObject(this._hdc, this.obm)
