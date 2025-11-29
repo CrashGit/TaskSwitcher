@@ -28,10 +28,26 @@ TaskSwitcher({
 
 Suspend(false)
 
-$F1:: {
+/**
+ * @Hotkeys
+ * Pick your poison
+ */
+; Simple hotkey
+$F1::TaskSwitcher.OpenMenuSorted()
+
+; Hotkeys to replace AltTab behavior
+#HotIf !TaskSwitcher.isActive
+!Tab:: {
     TaskSwitcher.OpenMenu()
-    KeyWait('F1')
+    TaskSwitcher.SelectNextProgram()
 }
+
+#HotIf TaskSwitcher.isActive
+!Tab::TaskSwitcher.SelectNextProgram()
++!Tab::TaskSwitcher.SelectPreviousProgram()
+*Alt up::TaskSwitcher.ActivateProgramAndCloseMenu()
+*WheelUp::TaskSwitcher.SelectNextProgram
+#HotIf
 
 
 ;============================================================================================
@@ -41,20 +57,19 @@ class TaskSwitcher {
     ; @options that can be changed here or used as a property name when passing options to TaskSwitcher({option: value})
     ; Note - options that go through Gdip_TextToGraphics require ARGB format as a string (e.g. 'FF00FF00' is green)
     ;       while other color options use 0xARGB as a hex number (e.g. 0xFF00FF00 is green)
-    static sortWindows := true
-    static defaultTextColor := 0xFFFFFFFF
-    static highlightTextColor := 0xFF6995DB
-    static rowHighlightColor := 0x30FFFFFF
-    static backgroundColor := 0xFF333333
-    static dividerColor := 0xFFFFFFFF
-    static bannerColor := 0xFF1B56B5
-    static bannerTextColor := 'FFFFFFFF'
-    static bannerText := 'Task Switcher'
-    static wrapRowSelection := true
-    static alwaysHighlightFirst := false
-    static defaultSearchText := ''
-    static searchTextColor := 'ffc8c8c8'
-    static searchBackgroundColor := this.searchTextColor
+    static _defaultTextColor := 0xFFFFFFFF
+    static _highlightTextColor := 0xFF6995DB
+    static _rowHighlightColor := 0x30FFFFFF
+    static _backgroundColor := 0xFF333333
+    static _dividerColor := 0xFFFFFFFF
+    static _bannerColor := 0xFF1B56B5
+    static _bannerTextColor := 'FFFFFFFF'
+    static _bannerText := 'Task Switcher'
+    static _wrapRowSelection := true
+    static _alwaysHighlightFirst := false
+    static _defaultSearchText := ''
+    static _searchTextColor := 'ffc8c8c8'
+    static _searchBackgroundColor := this._searchTextColor
 
 
     static isOpen => WinExist('ahk_id' this.menu.Hwnd)
@@ -63,22 +78,21 @@ class TaskSwitcher {
 
     static Call(options := {}) {
         for option, value in options.OwnProps() {
-            this.%option% := value
+            this.%'_' . option% := value
         }
     }
 
     static __New() {
         this.menu := Gui('+AlwaysOnTop -SysMenu +ToolWindow -Caption +E0x80000')
-        this.menu.BackColor := '333333'
 
         this.menu.Show('NA')
         WinSetAlwaysOnTop(true, 'ahk_id' this.menu.Hwnd)
         this.menu.Hide()
 
-        this.OnMouseMove := ObjBindMethod(this, '__OnMouseMove')
-        this.OnLeftClick := ObjBindMethod(this, '__OnLeftClick')
-        this.OnKeyPress  := ObjBindMethod(this, '__OnKeyPress')
-        this.OnMouseWheel := ObjBindMethod(this, '__OnMouseWheel')
+        this._OnMouseMove := ObjBindMethod(this, '__OnMouseMove')
+        this._OnLeftClick := ObjBindMethod(this, '__OnLeftClick')
+        this._OnKeyPress  := ObjBindMethod(this, '__OnKeyPress')
+        this._OnMouseWheel := ObjBindMethod(this, '__OnMouseWheel')
 
         ; closes task switcher if left click happens outside the menu
         HotIf((*) => TaskSwitcher.isOpen && !TaskSwitcher.hasMouseOver)
@@ -86,44 +100,54 @@ class TaskSwitcher {
         HotIf()
 
         ; GDI+ objects
-        this.hBitmap := 0
-        this.hdc := 0
-        this.hGraphics := 0
-        this.pBitmap := 0
+        this._hBitmap := 0
+        this._hdc := 0
+        this._hGraphics := 0
+        this._pBitmap := 0
+
+        this._sortedWindows := false
 
         ; cache for icons
-        this.iconCache := Map()
+        this._iconCache := Map()
 
         ; store all windows for filtering
-        this.allWindows := []
+        this._allWindows := []
 
         ; dimensions
-        this.maxWidth := 700
-        this.bannerHeight := 50
-        this.rowHeight := 75
-        this.marginX := 12
-        this.marginY := 12
-        this.iconSize := 32
-        this.dividerHeight := 1
+        this._maxWidth := 700
+        this._bannerHeight := 50
+        this._rowHeight := 75
+        this._marginX := 12
+        this._marginY := 12
+        this._iconSize := 32
+        this._dividerHeight := 1
 
-        this.scrollOffset := 0
-        this.targetScrollOffset := 0
-        this.scrollSpeed := 20
-        this.maxVisibleRows := 8
-        this.hoveredCloseButton := 0
-        this.closeButtonRects := []
+        this._scrollOffset := 0
+        this._targetScrollOffset := 0
+        this._scrollSpeed := 20
+        this._maxVisibleRows := 8
+        this._hoveredCloseButton := 0
+        this._closeButtonRects := []
     }
 
-    static OpenMenu() {
+    ; sorts the programs alphabetically
+    static OpenMenuSorted() {
+        this.OpenMenu(true)
+    }
+
+    ; uses z-order of programs
+    static OpenMenu(sortedWindows := false) {
         if WinExist('ahk_id ' this.menu.Hwnd) {
             return this.CloseMenu()
         }
 
+        this._sortedWindows := sortedWindows
+
         ; setup message handlers
-        OnMessage(0x200, this.OnMouseMove)
-        OnMessage(0x201, this.OnLeftClick)
-        OnMessage(0x20A, this.OnMouseWheel)
-        OnMessage(0x100, this.OnKeyPress)
+        OnMessage(0x200, this._)
+        OnMessage(0x201, this._OnLeftClick)
+        OnMessage(0x20A, this._OnMouseWheel)
+        OnMessage(0x100, this._OnKeyPress)
 
         this.__RefreshWindows()
         this.__CreateMenu()
@@ -134,27 +158,32 @@ class TaskSwitcher {
             return
         }
 
-        OnMessage(0x200, this.OnMouseMove, 0)
-        OnMessage(0x201, this.OnLeftClick, 0)
-        OnMessage(0x100, this.OnKeyPress,  0)
-        OnMessage(0x20A, this.OnMouseWheel, 0)
+        OnMessage(0x200, this._, 0)
+        OnMessage(0x201, this._OnLeftClick, 0)
+        OnMessage(0x100, this._OnKeyPress,  0)
+        OnMessage(0x20A, this._OnMouseWheel, 0)
 
-        if this.scrollTimer {
-            SetTimer(this.scrollTimer, 0)
-            this.scrollTimer := 0
+        if this._scrollTimer {
+            SetTimer(this._scrollTimer, 0)
+            this._scrollTimer := 0
         }
 
         this.menu.Hide()
         this.__GDIP_Cleanup
     }
 
+    static ActivateProgramAndCloseMenu() {
+        this.SelectProgram()
+        this.CloseMenu()
+    }
+
     static __CreateMenu() {
-        this.windowRects := []
-        this.selectedRow := 1
-        this.searchText := this.defaultSearchText
-        this.scrollOffset := 0
-        this.targetScrollOffset := 0    ; reset target
-        this.scrollTimer := 0           ; reset timer
+        this._windowRects := []
+        this._selectedRow := 1
+        this._searchText := this._defaultSearchText
+        this._scrollOffset := 0
+        this._targetScrollOffset := 0    ; reset target
+        this._scrollTimer := 0           ; reset timer
 
         totalHeight := this.__CalculateTotalHeight()
         this.__Init_GDIP(totalHeight)
@@ -163,18 +192,18 @@ class TaskSwitcher {
         this.__DrawMenu()
 
         ; setup window
-        this.menu.Show('Hide w' this.maxWidth ' h' totalHeight)
+        this.menu.Show('Hide w' this._maxWidth ' h' totalHeight)
         this.menu.GetPos(&winX, &winY)
 
         ; center the window manually
         MonitorGetWorkArea(, &left, &top, &right, &bottom)
-        centerX := left + (right - left - this.maxWidth) / 2
+        centerX := left + (right - left - this._maxWidth) / 2
         centerY := top + (bottom - top - totalHeight) / 2
 
         FrameShadow(this.menu.Hwnd)
 
         ; use UpdateLayeredWindow instead of picture control
-        UpdateLayeredWindow(this.menu.Hwnd, this.hdc, centerX, centerY, this.maxWidth, totalHeight)
+        UpdateLayeredWindow(this.menu.Hwnd, this._hdc, centerX, centerY, this._maxWidth, totalHeight)
         this.menu.Show()
 
         FrameShadow(hwnd) {
@@ -201,33 +230,33 @@ class TaskSwitcher {
     }
 
     static __ApplySearchFilter() {
-        if this.searchText != this.defaultSearchText && StrLen(this.searchText) > 0 {
+        if this._searchText != this._defaultSearchText && StrLen(this._searchText) > 0 {
             matches := []
-            for win in this.allWindows {
-                if InStr(win.processName, this.searchText) || InStr(win.title, this.searchText) {
+            for win in this._allWindows {
+                if InStr(win.processName, this._searchText) || InStr(win.title, this._searchText) {
                     matches.Push(win)
                 }
             }
             this.menu.windows := matches
         } else {
-            this.menu.windows := this.allWindows.Clone()
+            this.menu.windows := this._allWindows.Clone()
         }
     }
 
     static __CalculateTotalHeight() {
         totalRows := this.menu.windows.Length
 
-        if totalRows > this.maxVisibleRows {
-            ; Show partial row to indicate scrollability
-            visibleRows := this.maxVisibleRows - 0.5  ; Show half of the next row
+        if totalRows > this._maxVisibleRows {
+            ; show partial row to indicate scrollability
+            visibleRows := this._maxVisibleRows - 0.5  ; Show half of the next row
             totalDividers := Floor(visibleRows)
-            contentHeight := Integer(visibleRows * this.rowHeight) + (totalDividers * this.dividerHeight)
+            contentHeight := Integer(visibleRows * this._rowHeight) + (totalDividers * this._dividerHeight)
         } else {
             totalDividers := Max(0, totalRows - 1)
-            contentHeight := (totalRows * this.rowHeight) + (totalDividers * this.dividerHeight)
+            contentHeight := (totalRows * this._rowHeight) + (totalDividers * this._dividerHeight)
         }
 
-        totalHeight := this.bannerHeight + contentHeight
+        totalHeight := this._bannerHeight + contentHeight
         return totalHeight
     }
 
@@ -235,94 +264,94 @@ class TaskSwitcher {
         totalHeight := this.__CalculateTotalHeight()
 
         ; clear background
-        pBrush := Gdip_BrushCreateSolid(this.backgroundColor)
-        Gdip_FillRectangle(this.hGraphics, pBrush, 0, 0, this.maxWidth, totalHeight)
+        pBrush := Gdip_BrushCreateSolid(this._backgroundColor)
+        Gdip_FillRectangle(this._hGraphics, pBrush, 0, 0, this._maxWidth, totalHeight)
         Gdip_DeleteBrush(pBrush)
 
         ; draw banner
-        pBrushBanner := Gdip_BrushCreateSolid(this.bannerColor)
-        Gdip_FillRectangle(this.hGraphics, pBrushBanner, 0, 0, this.maxWidth, this.bannerHeight)
+        pBrushBanner := Gdip_BrushCreateSolid(this._bannerColor)
+        Gdip_FillRectangle(this._hGraphics, pBrushBanner, 0, 0, this._maxWidth, this._bannerHeight)
         Gdip_DeleteBrush(pBrushBanner)
 
         ; draw banner text
-        options := 'x' this.marginX ' y16 s18 Bold c' this.bannerTextColor
-        Gdip_TextToGraphics(this.hGraphics, this.bannerText, options, 'Arial', this.maxWidth - (this.marginX * 2), this.bannerHeight)
+        options := 'x' this._marginX ' y16 s18 Bold c' this._bannerTextColor
+        Gdip_TextToGraphics(this._hGraphics, this._bannerText, options, 'Arial', this._maxWidth - (this._marginX * 2), this._bannerHeight)
 
 
-        if this.searchBackgroundColor != this.searchTextColor {
+        if this._searchBackgroundColor != this._searchTextColor {
             rect := {
-                x: this.maxWidth//2 + this.marginX,
+                x: this._maxWidth//2 + this._marginX,
                 y: 8,
-                w: this.maxWidth//2 - (this.marginX * 2) + 4,
+                w: this._maxWidth//2 - (this._marginX * 2) + 4,
                 h: 34,
                 r: 8
             }
             this.searchBackgroundRect := rect
-            pBrushDebug := Gdip_BrushCreateSolid(this.searchBackgroundColor)
-            Gdip_FillRoundedRectangle(this.hGraphics, pBrushDebug, rect.x, rect.y, rect.w, rect.h, rect.r)
+            pBrushDebug := Gdip_BrushCreateSolid(this._searchBackgroundColor)
+            Gdip_FillRoundedRectangle(this._hGraphics, pBrushDebug, rect.x, rect.y, rect.w, rect.h, rect.r)
             Gdip_DeleteBrush(pBrushDebug)
         }
 
         ; draw input text (right-aligned)
-        displayText := this.searchText . Chr(0x200B)
-        inputOptions := 'x' (this.maxWidth - 380) ' y16 Right'
-        inputOptions .= (this.searchText = this.defaultSearchText)
-            ? 's16 Italic c' this.searchTextColor
-            : 's18 Bold c' this.bannerTextColor
-        Gdip_TextToGraphics(this.hGraphics, displayText, inputOptions, 'Arial', 370, this.bannerHeight)
+        displayText := this._searchText . Chr(0x200B)
+        inputOptions := 'x' (this._maxWidth - 380) ' y16 Right'
+        inputOptions .= (this._searchText = this._defaultSearchText)
+            ? 's16 Italic c' this._searchTextColor
+            : 's18 Bold c' this._bannerTextColor
+        Gdip_TextToGraphics(this._hGraphics, displayText, inputOptions, 'Arial', 370, this._bannerHeight)
 
         ; set clipping - only draw content below banner
-        Gdip_SetClipRect(this.hGraphics, 0, this.bannerHeight, this.maxWidth, totalHeight - this.bannerHeight)
+        Gdip_SetClipRect(this._hGraphics, 0, this._bannerHeight, this._maxWidth, totalHeight - this._bannerHeight)
 
         ; draw window rows with pixel offset
-        rowWithDivider := this.rowHeight + this.dividerHeight
-        this.windowRects := []
-        this.closeButtonRects := []  ; Track close button positions
+        rowWithDivider := this._rowHeight + this._dividerHeight
+        this._windowRects := []
+        this._closeButtonRects := []  ; Track close button positions
 
         for index, window in this.menu.windows {
             ; calculate Y position with scroll offset
-            rowY := this.bannerHeight + ((index - 1) * rowWithDivider) - this.scrollOffset
+            rowY := this._bannerHeight + ((index - 1) * rowWithDivider) - this._scrollOffset
 
             ; skip only if COMPLETELY outside visible area
-            if rowY + this.rowHeight < this.bannerHeight || rowY > totalHeight {
+            if rowY + this._rowHeight < this._bannerHeight || rowY > totalHeight {
                 continue
             }
 
-            this.windowRects.Push({
+            this._windowRects.Push({
                 x: 0,
-                y: Max(rowY, this.bannerHeight),
-                w: this.maxWidth,
-                h: this.rowHeight,
+                y: Max(rowY, this._bannerHeight),
+                w: this._maxWidth,
+                h: this._rowHeight,
                 window: window,
                 actualIndex: index
             })
 
             ; highlight selected row
-            if this.selectedRow = index {
-                pBrushHover := Gdip_BrushCreateSolid(this.rowHighlightColor)
-                Gdip_FillRectangle(this.hGraphics, pBrushHover, 0, rowY, this.maxWidth, this.rowHeight)
+            if this._selectedRow = index {
+                pBrushHover := Gdip_BrushCreateSolid(this._rowHighlightColor)
+                Gdip_FillRectangle(this._hGraphics, pBrushHover, 0, rowY, this._maxWidth, this._rowHeight)
                 Gdip_DeleteBrush(pBrushHover)
             }
 
             ; draw icon
-            iconX := this.marginX
-            iconY := rowY + (this.rowHeight - this.iconSize) / 2
+            iconX := this._marginX
+            iconY := rowY + (this._rowHeight - this._iconSize) / 2
             this.__DrawIcon(window, iconX, iconY)
 
             ; draw window title
-            textColor := (this.selectedRow = index) ? this.highlightTextColor : this.defaultTextColor
-            titleX := iconX + this.iconSize + 15
+            textColor := (this._selectedRow = index) ? this._highlightTextColor : this._defaultTextColor
+            titleX := iconX + this._iconSize + 15
             programOptions := 'x' titleX ' y' (rowY + 8) ' s18 Bold cFF' SubStr(Format('{:06X}', textColor), 3)
             titleOptions := 'x' titleX ' y' (rowY + 28) ' s16 cFF' SubStr(Format('{:06X}', textColor), 3)
-            Gdip_TextToGraphics(this.hGraphics, window.processName, programOptions, 'Arial', this.maxWidth - titleX - this.marginX - 40, this.rowHeight)
-            Gdip_TextToGraphics(this.hGraphics, window.title, titleOptions, 'Arial', this.maxWidth - titleX - this.marginX - 40, this.rowHeight)
+            Gdip_TextToGraphics(this._hGraphics, window.processName, programOptions, 'Arial', this._maxWidth - titleX - this._marginX - 40, this._rowHeight)
+            Gdip_TextToGraphics(this._hGraphics, window.title, titleOptions, 'Arial', this._maxWidth - titleX - this._marginX - 40, this._rowHeight)
 
             ; draw close button (X)
             closeButtonSize := 24
-            closeButtonX := this.maxWidth - this.marginX - closeButtonSize - 10
-            closeButtonY := rowY + (this.rowHeight - closeButtonSize) / 2
+            closeButtonX := this._maxWidth - this._marginX - closeButtonSize - 10
+            closeButtonY := rowY + (this._rowHeight - closeButtonSize) / 2
 
-            this.closeButtonRects.Push({
+            this._closeButtonRects.Push({
                 x: closeButtonX,
                 y: closeButtonY,
                 w: closeButtonSize,
@@ -331,7 +360,7 @@ class TaskSwitcher {
             })
 
             ; check if mouse is over this close button
-            isHoveringCloseButton := (this.hoveredCloseButton = index)
+            isHoveringCloseButton := (this._hoveredCloseButton = index)
 
             ; draw close button background (highlight if hovering)
             if isHoveringCloseButton {
@@ -339,45 +368,45 @@ class TaskSwitcher {
             } else {
                 pBrushClose := Gdip_BrushCreateSolid(0x40FFFFFF)  ; Semi-transparent white
             }
-            Gdip_FillEllipse(this.hGraphics, pBrushClose, closeButtonX, closeButtonY, closeButtonSize, closeButtonSize)
+            Gdip_FillEllipse(this._hGraphics, pBrushClose, closeButtonX, closeButtonY, closeButtonSize, closeButtonSize)
             Gdip_DeleteBrush(pBrushClose)
 
             ; draw X
             pPen := Gdip_CreatePen(isHoveringCloseButton ? 0xFFFFFFFF : 0xFFAAAAAA, 2)
             offset := 6
-            Gdip_DrawLine(this.hGraphics, pPen, closeButtonX + offset, closeButtonY + offset, closeButtonX + closeButtonSize - offset, closeButtonY + closeButtonSize - offset)
-            Gdip_DrawLine(this.hGraphics, pPen, closeButtonX + closeButtonSize - offset, closeButtonY + offset, closeButtonX + offset, closeButtonY + closeButtonSize - offset)
+            Gdip_DrawLine(this._hGraphics, pPen, closeButtonX + offset, closeButtonY + offset, closeButtonX + closeButtonSize - offset, closeButtonY + closeButtonSize - offset)
+            Gdip_DrawLine(this._hGraphics, pPen, closeButtonX + closeButtonSize - offset, closeButtonY + offset, closeButtonX + offset, closeButtonY + closeButtonSize - offset)
             Gdip_DeletePen(pPen)
 
             ; draw divider (skip if outside visible area or last item)
             if index < this.menu.windows.Length {
-                dividerY := rowY + this.rowHeight
-                if dividerY > this.bannerHeight && dividerY < totalHeight {
-                    pBrushDiv := Gdip_BrushCreateSolid(this.dividerColor)
-                    Gdip_FillRectangle(this.hGraphics, pBrushDiv, this.marginX, dividerY, this.maxWidth - (this.marginX * 2), this.dividerHeight)
+                dividerY := rowY + this._rowHeight
+                if dividerY > this._bannerHeight && dividerY < totalHeight {
+                    pBrushDiv := Gdip_BrushCreateSolid(this._dividerColor)
+                    Gdip_FillRectangle(this._hGraphics, pBrushDiv, this._marginX, dividerY, this._maxWidth - (this._marginX * 2), this._dividerHeight)
                     Gdip_DeleteBrush(pBrushDiv)
                 }
             }
         }
 
         ; reset clipping
-        Gdip_ResetClip(this.hGraphics)
+        Gdip_ResetClip(this._hGraphics)
 
         ; get current window position to maintain it
         this.menu.GetPos(&winX, &winY)
-        UpdateLayeredWindow(this.menu.Hwnd, this.hdc, winX, winY, this.maxWidth, totalHeight)
+        UpdateLayeredWindow(this.menu.Hwnd, this._hdc, winX, winY, this._maxWidth, totalHeight)
     }
 
     static __RecreateMenuForFiltering() {
         ; decide which row to highlight
         totalRows := this.menu.windows.Length
-        if this.alwaysHighlightFirst {
-            this.selectedRow := 1
-        } else if this.selectedRow > totalRows {
-            this.selectedRow := Max(1, totalRows)
+        if this._alwaysHighlightFirst {
+            this._selectedRow := 1
+        } else if this._selectedRow > totalRows {
+            this._selectedRow := Max(1, totalRows)
         }
 
-        this.scrollOffset := 0
+        this._scrollOffset := 0
 
         this.__GDIP_Cleanup()
         totalHeight := this.__CalculateTotalHeight()
@@ -389,7 +418,7 @@ class TaskSwitcher {
         MonitorGetWorkArea(, &left, &top, &right, &bottom)
         centerY := top + (bottom - top - totalHeight) / 2
 
-        UpdateLayeredWindow(this.menu.Hwnd, this.hdc, winX, centerY, this.maxWidth, totalHeight)
+        UpdateLayeredWindow(this.menu.Hwnd, this._hdc, winX, centerY, this._maxWidth, totalHeight)
     }
 
     static __UpdateMenu() {
@@ -415,10 +444,11 @@ class TaskSwitcher {
             })
         }
 
-        if this.sortWindows {
+        if this._sortedWindows {
             SortWindows()
         }
-        this.allWindows := windows.Clone()  ; store complete list
+
+        this._allWindows := windows.Clone()  ; store complete list
         this.menu.windows := windows
 
         SortWindows() {
@@ -438,12 +468,12 @@ class TaskSwitcher {
 
     static __Init_GDIP(totalHeight) {
         ; create GDI+ bitmap and graphics
-        this.hBitmap := CreateDIBSection(this.maxWidth, totalHeight)
-        this.hdc := CreateCompatibleDC()
-        this.obm := SelectObject(this.hdc, this.hBitmap)
-        this.hGraphics := Gdip_GraphicsFromHDC(this.hdc)
-        Gdip_SetSmoothingMode(this.hGraphics, 4)
-        Gdip_SetTextRenderingHint(this.hGraphics, 3)
+        this._hBitmap := CreateDIBSection(this._maxWidth, totalHeight)
+        this._hdc := CreateCompatibleDC()
+        this.obm := SelectObject(this._hdc, this._hBitmap)
+        this._hGraphics := Gdip_GraphicsFromHDC(this._hdc)
+        Gdip_SetSmoothingMode(this._hGraphics, 4)
+        Gdip_SetTextRenderingHint(this._hGraphics, 3)
     }
 
     static __GetProgramName(path) {
@@ -476,7 +506,7 @@ class TaskSwitcher {
         hwnd := window.hwnd
         cacheKey := window.processName
 
-        if !this.iconCache.Has(cacheKey) {
+        if !this._iconCache.Has(cacheKey) {
             pBitmap := 0
 
             ; try to extract icon at higher resolution (256x256) for better quality
@@ -538,15 +568,15 @@ class TaskSwitcher {
                 }
             }
 
-            this.iconCache[cacheKey] := pBitmap ? pBitmap : 0
+            this._iconCache[cacheKey] := pBitmap ? pBitmap : 0
         }
 
-        pBitmap := this.iconCache[cacheKey]
+        pBitmap := this._iconCache[cacheKey]
         if pBitmap && Gdip_GetImageWidth(pBitmap) {
             ; Enable high quality scaling
-            Gdip_SetInterpolationMode(this.hGraphics, 7)  ; HighQualityBicubic
-            Gdip_DrawImage(this.hGraphics, pBitmap, x, y, this.iconSize, this.iconSize)
-            Gdip_SetInterpolationMode(this.hGraphics, 2)  ; Reset to default
+            Gdip_SetInterpolationMode(this._hGraphics, 7)  ; HighQualityBicubic
+            Gdip_DrawImage(this._hGraphics, pBitmap, x, y, this._iconSize, this._iconSize)
+            Gdip_SetInterpolationMode(this._hGraphics, 2)  ; Reset to default
         }
     }
 
@@ -618,7 +648,7 @@ class TaskSwitcher {
 
         ; check if hovering over a close button first
         newHoveredCloseButton := 0
-        for rect in this.closeButtonRects {
+        for rect in this._closeButtonRects {
             if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
                 newHoveredCloseButton := rect.actualIndex
                 break
@@ -626,17 +656,17 @@ class TaskSwitcher {
         }
 
         ; check which row mouse is over
-        newHover := this.selectedRow
-        for rect in this.windowRects {
+        newHover := this._selectedRow
+        for rect in this._windowRects {
             if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
                 newHover := rect.actualIndex
                 break
             }
         }
 
-        if newHover != this.selectedRow || newHoveredCloseButton != this.hoveredCloseButton {
-            this.selectedRow := newHover
-            this.hoveredCloseButton := newHoveredCloseButton
+        if newHover != this._selectedRow || newHoveredCloseButton != this._hoveredCloseButton {
+            this._selectedRow := newHover
+            this._hoveredCloseButton := newHoveredCloseButton
             this.__DrawMenu()
         }
     }
@@ -646,11 +676,11 @@ class TaskSwitcher {
         y := lParam >> 16
 
         ; check if clicking in the search bar
-        if this.searchText = this.defaultSearchText {
-            if this.searchBackgroundColor != this.searchTextColor {
+        if this._searchText = this._defaultSearchText {
+            if this._searchBackgroundColor != this._searchTextColor {
                 rect := this.searchBackgroundRect
                 if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.h {
-                    this.searchText := ''
+                    this._searchText := ''
                     this.__DrawMenu()
                     return
                 }
@@ -658,7 +688,7 @@ class TaskSwitcher {
         }
 
         ; check if clicking a close button
-        for rect in this.closeButtonRects {
+        for rect in this._closeButtonRects {
             if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
                 this.__CloseWindow(this.menu.windows[rect.actualIndex])
                 return
@@ -666,7 +696,7 @@ class TaskSwitcher {
         }
 
         ; otherwise check for row clicks
-        for rect in this.windowRects {
+        for rect in this._windowRects {
             if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
                 this.__ActivateWindow(rect.window)
                 break
@@ -675,7 +705,7 @@ class TaskSwitcher {
     }
 
     static __OnKeyPress(wParam, lParam, msg, hwnd) {
-        matches := this.allWindows.Clone()
+        matches := this._allWindows.Clone()
 
         vk := wParam
         sc := (lParam >> 16) & 0xFF
@@ -683,39 +713,39 @@ class TaskSwitcher {
 
         switch key {
         case 'Escape':
-            if this.searchText = this.defaultSearchText {
+            if this._searchText = this._defaultSearchText {
                 this.CloseMenu()
                 return
             } else {
-                this.searchText := this.defaultSearchText
+                this._searchText := this._defaultSearchText
             }
 
         case 'Enter':
-            if matches.Length > 0 && this.selectedRow > 0 {
-                this.__ActivateWindow(this.menu.windows[this.selectedRow])
+            if matches.Length > 0 && this._selectedRow > 0 {
+                this.__ActivateWindow(this.menu.windows[this._selectedRow])
             }
             return
 
         case 'Backspace':
             if GetKeyState('Control') {
-                this.searchText := this.defaultSearchText
-            } else if this.searchText != this.defaultSearchText {
-                this.searchText := SubStr(this.searchText, 1, -1)
+                this._searchText := this._defaultSearchText
+            } else if this._searchText != this._defaultSearchText {
+                this._searchText := SubStr(this._searchText, 1, -1)
             }
 
         case 'NumpadUp':
-            this.__SelectPreviousRow()
+            this.SelectPreviousProgram()
             return
 
         case 'NumpadDown':
-            this.__SelectNextRow()
+            this.SelectNextProgram()
             return
 
         case 'Space':
             this.__AddInputCharacter(' ')
 
         case 'NumpadDel':
-            this.__CloseWindow(this.menu.windows[this.selectedRow])
+            this.__CloseWindow(this.menu.windows[this._selectedRow])
             return
 
         default:
@@ -729,14 +759,14 @@ class TaskSwitcher {
             }
         }
 
-        if this.searchText = this.defaultSearchText {
-            return
-        } else if StrLen(this.searchText) = 0 {
-            this.searchText := this.defaultSearchText
+        if this._searchText = this._defaultSearchText {
+            ; do nothing
+        } else if StrLen(this._searchText) = 0 {
+            this._searchText := this._defaultSearchText
         } else {
             matches := []
-            for window in this.allWindows {
-                if InStr(window.processName, this.searchText) || InStr(window.title, this.searchText) {
+            for window in this._allWindows {
+                if InStr(window.processName, this._searchText) || InStr(window.title, this._searchText) {
                     matches.Push(window)
                 }
             }
@@ -762,11 +792,15 @@ class TaskSwitcher {
     }
 
     static __AddInputCharacter(input) {
-        if this.searchText = this.defaultSearchText {
-            this.searchText := StrUpper(input)
+        if this._searchText = this._defaultSearchText {
+            this._searchText := StrUpper(input)
         } else {
-            this.searchText .= StrUpper(input)
+            this._searchText .= StrUpper(input)
         }
+    }
+
+    static SelectProgram() {
+        this.__ActivateWindow(this.menu.windows[this._selectedRow])
     }
 
     static __OnMouseWheel(wParam, lParam, msg, hwnd) {
@@ -780,40 +814,40 @@ class TaskSwitcher {
         scrollAmount := 40
 
         if wheelDelta > 0 {
-            this.targetScrollOffset -= scrollAmount
+            this._targetScrollOffset -= scrollAmount
         } else {
-            this.targetScrollOffset += scrollAmount
+            this._targetScrollOffset += scrollAmount
         }
 
         ; clamp target
-        rowWithDivider := this.rowHeight + this.dividerHeight
+        rowWithDivider := this._rowHeight + this._dividerHeight
         totalContentHeight := this.menu.windows.Length * rowWithDivider
-        visibleHeight := this.__CalculateTotalHeight() - this.bannerHeight
+        visibleHeight := this.__CalculateTotalHeight() - this._bannerHeight
         maxScrollPixels := Max(0, totalContentHeight - visibleHeight)
-        this.targetScrollOffset := Max(0, Min(this.targetScrollOffset, maxScrollPixels))
+        this._targetScrollOffset := Max(0, Min(this._targetScrollOffset, maxScrollPixels))
 
         ; start animation if not already running
-        if !this.scrollTimer {
-            this.scrollTimer := ObjBindMethod(this, '__AnimateScroll')
-            SetTimer(this.scrollTimer, 8)  ; Increased from 16ms to 8ms (~120 FPS)
+        if !this._scrollTimer {
+            this._scrollTimer := ObjBindMethod(this, '__AnimateScroll')
+            SetTimer(this._scrollTimer, 8)  ; Increased from 16ms to 8ms (~120 FPS)
         }
     }
 
     static __AnimateScroll() {
-        diff := this.targetScrollOffset - this.scrollOffset
+        diff := this._targetScrollOffset - this._scrollOffset
 
         ; if close enough, snap to target and stop
         if Abs(diff) < 0.5 {
-            this.scrollOffset := this.targetScrollOffset
-            SetTimer(this.scrollTimer, 0)
-            this.scrollTimer := 0
+            this._scrollOffset := this._targetScrollOffset
+            SetTimer(this._scrollTimer, 0)
+            this._scrollTimer := 0
             this.__DrawMenu()
             this.__UpdateHoverFromMouse()
             return
         }
 
         ; faster easing for snappier feel (increased from 0.2 to 0.3-0.4)
-        this.scrollOffset += diff * 0.35
+        this._scrollOffset += diff * 0.35
         this.__DrawMenu()
         this.__UpdateHoverFromMouse()
     }
@@ -833,34 +867,34 @@ class TaskSwitcher {
         y := NumGet(pt, 4, 'Int')
 
         ; check which row the mouse is over
-        newHover := this.selectedRow
-        for rect in this.windowRects {
+        newHover := this._selectedRow
+        for rect in this._windowRects {
             if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
                 newHover := rect.actualIndex
                 break
             }
         }
 
-        if newHover != this.selectedRow {
-            this.selectedRow := newHover
+        if newHover != this._selectedRow {
+            this._selectedRow := newHover
             this.__DrawMenu()
         }
     }
 
     static __ScrollUp() {
-        if this.scrollOffset > 0 {
-            this.scrollOffset--
+        if this._scrollOffset > 0 {
+            this._scrollOffset--
             this.__DrawMenu()
         }
     }
 
     static __Scroll(amount) {
-        rowWithDivider := this.rowHeight + this.dividerHeight
+        rowWithDivider := this._rowHeight + this._dividerHeight
         totalContentHeight := this.menu.windows.Length * rowWithDivider
-        visibleHeight := this.__CalculateTotalHeight() - this.bannerHeight
+        visibleHeight := this.__CalculateTotalHeight() - this._bannerHeight
         maxScrollPixels := Max(0, totalContentHeight - visibleHeight)
 
-        this.scrollOffset := Max(0, Min(this.scrollOffset + amount, maxScrollPixels))
+        this._scrollOffset := Max(0, Min(this._scrollOffset + amount, maxScrollPixels))
         this.__DrawMenu()
     }
 
@@ -869,24 +903,24 @@ class TaskSwitcher {
         WinActivate(window)
     }
 
-    static __SelectPreviousRow() {
-        if this.selectedRow > 1 {
-            this.selectedRow -= 1
+    static SelectPreviousProgram() {
+        if this._selectedRow > 1 {
+            this._selectedRow -= 1
             this.__ScrollToSelectedRow()
-        } else if this.wrapRowSelection {
-            this.selectedRow := this.menu.windows.Length
+        } else if this._wrapRowSelection {
+            this._selectedRow := this.menu.windows.Length
             this.__ScrollToSelectedRow()
         }
 
         this.__DrawMenu()
     }
 
-    static __SelectNextRow() {
-        if this.selectedRow < this.menu.windows.Length {
-            this.selectedRow += 1
+    static SelectNextProgram() {
+        if this._selectedRow < this.menu.windows.Length {
+            this._selectedRow += 1
             this.__ScrollToSelectedRow()
-        } else if this.wrapRowSelection {
-            this.selectedRow := 1
+        } else if this._wrapRowSelection {
+            this._selectedRow := 1
             this.__ScrollToSelectedRow()
         }
 
@@ -894,19 +928,19 @@ class TaskSwitcher {
     }
 
     static __ScrollToSelectedRow() {
-        rowWithDivider := this.rowHeight + this.dividerHeight
-        selectedRowTop := (this.selectedRow - 1) * rowWithDivider
-        selectedRowBottom := selectedRowTop + this.rowHeight
+        rowWithDivider := this._rowHeight + this._dividerHeight
+        selectedRowTop := (this._selectedRow - 1) * rowWithDivider
+        selectedRowBottom := selectedRowTop + this._rowHeight
 
-        visibleHeight := this.__CalculateTotalHeight() - this.bannerHeight
+        visibleHeight := this.__CalculateTotalHeight() - this._bannerHeight
 
         ; scroll if selected row is above visible area
-        if selectedRowTop < this.scrollOffset {
-            this.scrollOffset := selectedRowTop
+        if selectedRowTop < this._scrollOffset {
+            this._scrollOffset := selectedRowTop
         }
         ; scroll if selected row is below visible area
-        else if selectedRowBottom > this.scrollOffset + visibleHeight {
-            this.scrollOffset := selectedRowBottom - visibleHeight
+        else if selectedRowBottom > this._scrollOffset + visibleHeight {
+            this._scrollOffset := selectedRowBottom - visibleHeight
         }
     }
 
@@ -952,26 +986,26 @@ class TaskSwitcher {
     }
 
     static __GDIP_Cleanup() {
-        if this.hGraphics {
-            Gdip_DeleteGraphics(this.hGraphics)
-            this.hGraphics := 0
+        if this._hGraphics {
+            Gdip_DeleteGraphics(this._hGraphics)
+            this._hGraphics := 0
         }
-        if this.hdc {
-            SelectObject(this.hdc, this.obm)
-            DeleteDC(this.hdc)
-            this.hdc := 0
+        if this._hdc {
+            SelectObject(this._hdc, this.obm)
+            DeleteDC(this._hdc)
+            this._hdc := 0
         }
-        if this.hBitmap {
-            DeleteObject(this.hBitmap)
-            this.hBitmap := 0
+        if this._hBitmap {
+            DeleteObject(this._hBitmap)
+            this._hBitmap := 0
         }
 
         ; cleanup cached icons
-        for key, pBitmap in this.iconCache {
+        for key, pBitmap in this._iconCache {
             if pBitmap {
                 Gdip_DisposeImage(pBitmap)
             }
         }
-        this.iconCache := Map()
+        this._iconCache := Map()
     }
 }
