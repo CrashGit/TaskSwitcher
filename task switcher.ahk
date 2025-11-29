@@ -715,7 +715,7 @@ class TaskSwitcher {
             }
 
         case 'Enter':
-            if matches.Length > 0 && this._selectedRow > 0 {
+            if this._selectedRow > 0 && this._selectedRow <= this.menu.windows.Length {
                 this.__ActivateWindow(this.menu.windows[this._selectedRow])
             }
             return
@@ -794,7 +794,9 @@ class TaskSwitcher {
     }
 
     static SelectProgram() {
-        this.__ActivateWindow(this.menu.windows[this._selectedRow])
+        if this._selectedRow > 0 && this._selectedRow <= this.menu.windows.Length {
+            this.__ActivateWindow(this.menu.windows[this._selectedRow])
+        }
     }
 
     static __OnMouseWheel(wParam, lParam, msg, hwnd) {
