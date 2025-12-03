@@ -23,7 +23,9 @@ TaskSwitcher({
     alwaysHighlightFirst: true,
     rowHighlightColor: 0xFF555555,
     defaultSearchText: 'Search...',
-    searchBackgroundColor: 0xFF333333
+    searchBackgroundColor: 0xFF333333,
+    highlightTextColor: 0xFF00FF33,
+    mouseHighlightTextColor: 0xFF999999
 })
 
 Suspend(false)
@@ -33,7 +35,9 @@ Suspend(false)
  * Pick your poison
  */
 ; Simple hotkey
-$F1::TaskSwitcher.OpenMenuSorted()
+; $F1::TaskSwitcher.OpenMenuSorted()
+$<^RCtrl::TaskSwitcher.OpenMenuSorted()
+$>^LCtrl::TaskSwitcher.OpenMenuSorted()
 
 ; Hotkeys to replace AltTab behavior
 #HotIf !TaskSwitcher.isActive
@@ -57,19 +61,20 @@ class TaskSwitcher {
     ; @options that can be changed here or used as a property name when passing options to TaskSwitcher({option: value})
     ; Note - options that go through Gdip_TextToGraphics require ARGB format as a string (e.g. 'FF00FF00' is green)
     ;       while other color options use 0xARGB as a hex number (e.g. 0xFF00FF00 is green)
-    static _defaultTextColor := 0xFFFFFFFF
-    static _highlightTextColor := 0xFF6995DB
-    static _rowHighlightColor := 0x30FFFFFF
-    static _backgroundColor := 0xFF333333
-    static _dividerColor := 0xFFFFFFFF
-    static _bannerColor := 0xFF1B56B5
-    static _bannerTextColor := 'FFFFFFFF'
-    static _bannerText := 'Task Switcher'
-    static _wrapRowSelection := true
-    static _alwaysHighlightFirst := false
-    static _defaultSearchText := ''
-    static _searchTextColor := 'ffc8c8c8'
-    static _searchBackgroundColor := this._searchTextColor
+    static defaultTextColor := 0xFFFFFFFF
+    static highlightTextColor := 0xFF6995DB
+    static rowHighlightColor := 0x30FFFFFF
+    static mouseHighlightTextColor := this.highlightTextColor
+    static backgroundColor := 0xFF333333
+    static dividerColor := 0xFFFFFFFF
+    static bannerColor := 0xFF1B56B5
+    static bannerTextColor := 'FFFFFFFF'
+    static bannerText := 'Task Switcher'
+    static wrapRowSelection := true
+    static alwaysHighlightFirst := false
+    static defaultSearchText := ''
+    static searchTextColor := 'ffc8c8c8'
+    static searchBackgroundColor := this.searchTextColor
 
 
     static isOpen => WinExist('ahk_id' this.menu.Hwnd)
@@ -78,7 +83,7 @@ class TaskSwitcher {
 
     static Call(options := {}) {
         for option, value in options.OwnProps() {
-            this.%'_' . option% := value
+            this.%option% := value
         }
     }
 
@@ -123,6 +128,7 @@ class TaskSwitcher {
         this._scrollSpeed := 20
         this._maxVisibleRows := 8
         this._hoveredCloseButton := 0
+        this._mousedOver := 0
         this._closeButtonRects := []
     }
 
@@ -176,7 +182,8 @@ class TaskSwitcher {
     static __CreateMenu() {
         this._windowRects := []
         this._selectedRow := 1
-        this._searchText := this._defaultSearchText
+        this._mousedOver := 0
+        this._searchText := this.defaultSearchText
         this._scrollOffset := 0
         this._targetScrollOffset := 0    ; reset target
         this._scrollTimer := 0           ; reset timer
@@ -220,11 +227,11 @@ class TaskSwitcher {
 
         this.__RefreshWindows()
         this.__ApplySearchFilter()
-        this.__RecreateMenuForFiltering()
+        this.__UpdateMenuWhenFiltered()
     }
 
     static __ApplySearchFilter() {
-        if this._searchText != this._defaultSearchText && StrLen(this._searchText) > 0 {
+        if this._searchText != this.defaultSearchText && StrLen(this._searchText) > 0 {
             matches := []
             for win in this._allWindows {
                 if InStr(win.processName, this._searchText) || InStr(win.title, this._searchText) {
@@ -258,20 +265,20 @@ class TaskSwitcher {
         totalHeight := this.__CalculateTotalHeight()
 
         ; clear background
-        pBrush := Gdip_BrushCreateSolid(this._backgroundColor)
+        pBrush := Gdip_BrushCreateSolid(this.backgroundColor)
         Gdip_FillRectangle(this._pGraphics, pBrush, 0, 0, this._maxWidth, totalHeight)
         Gdip_DeleteBrush(pBrush)
 
         ; draw banner
-        pBrushBanner := Gdip_BrushCreateSolid(this._bannerColor)
+        pBrushBanner := Gdip_BrushCreateSolid(this.bannerColor)
         Gdip_FillRectangle(this._pGraphics, pBrushBanner, 0, 0, this._maxWidth, this._bannerHeight)
         Gdip_DeleteBrush(pBrushBanner)
 
         ; draw banner text
-        options := 'x' this._marginX ' y16 s18 Bold c' this._bannerTextColor
-        Gdip_TextToGraphics(this._pGraphics, this._bannerText, options, 'Arial', this._maxWidth - (this._marginX * 2), this._bannerHeight)
+        options := 'x' this._marginX ' y16 s18 Bold c' this.bannerTextColor
+        Gdip_TextToGraphics(this._pGraphics, this.bannerText, options, 'Arial', this._maxWidth - (this._marginX * 2), this._bannerHeight)
 
-        if this._searchBackgroundColor != this._searchTextColor {
+        if this.searchBackgroundColor != this.searchTextColor {
             rect := {
                 x: this._maxWidth//2 + this._marginX,
                 y: 8,
@@ -280,7 +287,7 @@ class TaskSwitcher {
                 r: 8
             }
             this.searchBackgroundRect := rect
-            pBrushDebug := Gdip_BrushCreateSolid(this._searchBackgroundColor)
+            pBrushDebug := Gdip_BrushCreateSolid(this.searchBackgroundColor)
             Gdip_FillRoundedRectangle(this._pGraphics, pBrushDebug, rect.x, rect.y, rect.w, rect.h, rect.r)
             Gdip_DeleteBrush(pBrushDebug)
         }
@@ -288,9 +295,9 @@ class TaskSwitcher {
         ; draw input text (right-aligned)
         displayText := this._searchText . Chr(0x200B)
         inputOptions := 'x' (this._maxWidth - 380) ' y16 Right'
-        inputOptions .= (this._searchText = this._defaultSearchText)
-            ? 's16 Italic c' this._searchTextColor
-            : 's18 Bold c' this._bannerTextColor
+        inputOptions .= (this._searchText = this.defaultSearchText)
+            ? 's16 Italic c' this.searchTextColor
+            : 's18 Bold c' this.bannerTextColor
         Gdip_TextToGraphics(this._pGraphics, displayText, inputOptions, 'Arial', 370, this._bannerHeight)
 
         ; set clipping - only draw content below banner
@@ -321,7 +328,7 @@ class TaskSwitcher {
 
             ; highlight selected row
             if this._selectedRow = index {
-                pBrushHover := Gdip_BrushCreateSolid(this._rowHighlightColor)
+                pBrushHover := Gdip_BrushCreateSolid(this.rowHighlightColor)
                 Gdip_FillRectangle(this._pGraphics, pBrushHover, 0, rowY, this._maxWidth, this._rowHeight)
                 Gdip_DeleteBrush(pBrushHover)
             }
@@ -331,8 +338,15 @@ class TaskSwitcher {
             iconY := rowY + (this._rowHeight - this._iconSize) / 2
             this.__DrawIcon(window, iconX, iconY)
 
-            ; draw window title
-            textColor := (this._selectedRow = index) ? this._highlightTextColor : this._defaultTextColor
+            ; draw row
+            switch index {
+            case this._selectedRow:
+                textColor := this.highlightTextColor
+            case this._mousedOver:
+                textColor := this.mouseHighlightTextColor
+            default:
+                textColor := this.defaultTextColor
+            }
             titleX := iconX + this._iconSize + 15
             programOptions := 'x' titleX ' y' (rowY + 8) ' s18 Bold cFF' SubStr(Format('{:06X}', textColor), 3)
             titleOptions := 'x' titleX ' y' (rowY + 28) ' s16 cFF' SubStr(Format('{:06X}', textColor), 3)
@@ -375,7 +389,7 @@ class TaskSwitcher {
             if index < this.menu.windows.Length {
                 dividerY := rowY + this._rowHeight
                 if dividerY > this._bannerHeight && dividerY < totalHeight {
-                    pBrushDiv := Gdip_BrushCreateSolid(this._dividerColor)
+                    pBrushDiv := Gdip_BrushCreateSolid(this.dividerColor)
                     Gdip_FillRectangle(this._pGraphics, pBrushDiv, this._marginX, dividerY, this._maxWidth - (this._marginX * 2), this._dividerHeight)
                     Gdip_DeleteBrush(pBrushDiv)
                 }
@@ -390,10 +404,10 @@ class TaskSwitcher {
         UpdateLayeredWindow(this.menu.Hwnd, this._hdc, winX, winY, this._maxWidth, totalHeight)
     }
 
-    static __RecreateMenuForFiltering() {
+    static __UpdateMenuWhenFiltered() {
         ; decide which row to highlight
         totalRows := this.menu.windows.Length
-        if this._alwaysHighlightFirst {
+        if this.alwaysHighlightFirst {
             this._selectedRow := 1
         } else if this._selectedRow > totalRows {
             this._selectedRow := Max(1, totalRows)
@@ -617,23 +631,6 @@ class TaskSwitcher {
         x := lParam & 0xFFFF
         y := lParam >> 16
 
-        pt := Buffer(8)
-        NumPut('Short', x, pt, 0)
-        NumPut('Short', y, pt, 4)
-
-        DllCall('ClientToScreen', 'Ptr', hwnd, 'Ptr', pt)
-
-        screenX := NumGet(pt, 0, 'Short')
-        screenY := NumGet(pt, 4, 'Short')
-
-        ; Prevents row from updating when typing. Re-rendering the graphics causes this function to be called
-        if lastX = screenX && lastY = screenY {
-            return
-        }
-
-        lastX := screenX
-        lastY := screenY
-
         ; check if hovering over a close button first
         newHoveredCloseButton := 0
         for rect in this._closeButtonRects {
@@ -643,8 +640,7 @@ class TaskSwitcher {
             }
         }
 
-        ; check which row mouse is over
-        newHover := this._selectedRow
+        newHover := 0
         for rect in this._windowRects {
             if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
                 newHover := rect.actualIndex
@@ -652,8 +648,8 @@ class TaskSwitcher {
             }
         }
 
-        if newHover != this._selectedRow || newHoveredCloseButton != this._hoveredCloseButton {
-            this._selectedRow := newHover
+        if newHover != this._mousedOver || newHoveredCloseButton != this._hoveredCloseButton {
+            this._mousedOver := newHover
             this._hoveredCloseButton := newHoveredCloseButton
             this.__DrawMenu()
         }
@@ -664,8 +660,8 @@ class TaskSwitcher {
         y := lParam >> 16
 
         ; check if clicking in the search bar
-        if this._searchText = this._defaultSearchText {
-            if this._searchBackgroundColor != this._searchTextColor {
+        if this._searchText = this.defaultSearchText {
+            if this.searchBackgroundColor != this.searchTextColor {
                 rect := this.searchBackgroundRect
                 if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.h {
                     this._searchText := ''
@@ -701,11 +697,11 @@ class TaskSwitcher {
 
         switch key {
         case 'Escape':
-            if this._searchText = this._defaultSearchText {
+            if this._searchText = this.defaultSearchText {
                 this.CloseMenu()
                 return
             } else {
-                this._searchText := this._defaultSearchText
+                this._searchText := this.defaultSearchText
             }
 
         case 'Enter':
@@ -716,8 +712,8 @@ class TaskSwitcher {
 
         case 'Backspace':
             if GetKeyState('Control') {
-                this._searchText := this._defaultSearchText
-            } else if this._searchText != this._defaultSearchText {
+                this._searchText := this.defaultSearchText
+            } else if this._searchText != this.defaultSearchText {
                 this._searchText := SubStr(this._searchText, 1, -1)
             }
 
@@ -747,10 +743,10 @@ class TaskSwitcher {
             }
         }
 
-        if this._searchText = this._defaultSearchText {
+        if this._searchText = this.defaultSearchText {
             ; do nothing
         } else if StrLen(this._searchText) = 0 {
-            this._searchText := this._defaultSearchText
+            this._searchText := this.defaultSearchText
         } else {
             matches := []
             for window in this._allWindows {
@@ -761,7 +757,7 @@ class TaskSwitcher {
         }
 
         this.menu.windows := matches
-        this.__RecreateMenuForFiltering()
+        this.__UpdateMenuWhenFiltered()
 
         __GetCharFromVK(vk, sc) {
             ; get keyboard state
@@ -780,7 +776,7 @@ class TaskSwitcher {
     }
 
     static __AddInputCharacter(input) {
-        if this._searchText = this._defaultSearchText {
+        if this._searchText = this.defaultSearchText {
             this._searchText := StrUpper(input)
         } else {
             this._searchText .= StrUpper(input)
@@ -857,7 +853,7 @@ class TaskSwitcher {
         y := NumGet(pt, 4, 'Int')
 
         ; check which row the mouse is over
-        newHover := this._selectedRow
+        newHover := 0
         for rect in this._windowRects {
             if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
                 newHover := rect.actualIndex
@@ -865,8 +861,8 @@ class TaskSwitcher {
             }
         }
 
-        if newHover != this._selectedRow {
-            this._selectedRow := newHover
+        if newHover != this._mousedOver {
+            this._mousedOver := newHover
             this.__DrawMenu()
         }
     }
@@ -897,7 +893,7 @@ class TaskSwitcher {
         if this._selectedRow > 1 {
             this._selectedRow -= 1
             this.__ScrollToSelectedRow()
-        } else if this._wrapRowSelection {
+        } else if this.wrapRowSelection {
             this._selectedRow := this.menu.windows.Length
             this.__ScrollToSelectedRow()
         }
@@ -909,7 +905,7 @@ class TaskSwitcher {
         if this._selectedRow < this.menu.windows.Length {
             this._selectedRow += 1
             this.__ScrollToSelectedRow()
-        } else if this._wrapRowSelection {
+        } else if this.wrapRowSelection {
             this._selectedRow := 1
             this.__ScrollToSelectedRow()
         }
