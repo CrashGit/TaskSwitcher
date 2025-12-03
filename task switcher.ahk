@@ -35,23 +35,12 @@ Suspend(false)
  * Pick your poison
  */
 ; Simple hotkey
-; $F1::TaskSwitcher.OpenMenuSorted()
+$F1::TaskSwitcher.OpenMenu()
 $<^RCtrl::TaskSwitcher.OpenMenuSorted()
 $>^LCtrl::TaskSwitcher.OpenMenuSorted()
 
-; Hotkeys to replace AltTab behavior
-#HotIf !TaskSwitcher.isActive
-!Tab:: {
-    TaskSwitcher.OpenMenu()
-    TaskSwitcher.SelectNextProgram()
-}
-
-#HotIf TaskSwitcher.isActive
-!Tab::TaskSwitcher.SelectNextProgram()
-+!Tab::TaskSwitcher.SelectPreviousProgram()
-*Alt up::TaskSwitcher.ActivateProgramAndCloseMenu()
-
-#HotIf
+; Hotkey setup to replace AltTab behavior
+TaskSwitcher.AltTabReplacement()
 
 
 ;============================================================================================
@@ -87,51 +76,6 @@ class TaskSwitcher {
         }
     }
 
-    static __New() {
-        this.menu := Gui('+AlwaysOnTop -SysMenu +ToolWindow -Caption +E0x80000')
-
-        this._OnMouseMove  := ObjBindMethod(this, '__OnMouseMove')
-        this._OnLeftClick  := ObjBindMethod(this, '__OnLeftClick')
-        this._OnKeyPress   := ObjBindMethod(this, '__OnKeyPress')
-        this._OnMouseWheel := ObjBindMethod(this, '__OnMouseWheel')
-
-        ; closes task switcher if left click happens outside the menu
-        HotIf((*) => TaskSwitcher.isOpen && !TaskSwitcher.hasMouseOver)
-        Hotkey('~*LButton', (*) => this.CloseMenu())
-        HotIf()
-
-        ; GDI+ objects
-        this._hBitmap := 0
-        this._hdc := 0
-        this._pGraphics := 0
-        this._pBitmap := 0
-
-        this._sortedWindows := false
-
-        ; cache for icons
-        this._iconCache := Map()
-
-        ; store all windows for filtering
-        this._allWindows := []
-
-        ; dimensions
-        this._maxWidth := 700
-        this._bannerHeight := 50
-        this._rowHeight := 75
-        this._marginX := 12
-        this._marginY := 12
-        this._iconSize := 32
-        this._dividerHeight := 1
-
-        this._scrollOffset := 0
-        this._targetScrollOffset := 0
-        this._scrollSpeed := 20
-        this._maxVisibleRows := 8
-        this._hoveredCloseButton := 0
-        this._mousedOver := 0
-        this._closeButtonRects := []
-    }
-
     ; sorts the programs alphabetically
     static OpenMenuSorted() {
         this.OpenMenu(true)
@@ -147,12 +91,13 @@ class TaskSwitcher {
 
         ; setup message handlers
         OnMessage(0x200, this._OnMouseMove)
-        OnMessage(0x201, this._OnLeftClick)
         OnMessage(0x20A, this._OnMouseWheel)
-        OnMessage(0x100, this._OnKeyPress)
+        OnMessage(0x201, this._OnLeftClick)
+        OnMessage(0x202, this._OnLeftClickRelease)
 
         this.__RefreshWindows()
         this.__CreateMenu()
+        this._ih.Start()
     }
 
     static CloseMenu() {
@@ -160,10 +105,11 @@ class TaskSwitcher {
             return
         }
 
-        OnMessage(0x200, this._OnMouseMove,  0)
-        OnMessage(0x201, this._OnLeftClick,  0)
-        OnMessage(0x100, this._OnKeyPress,   0)
+        this._ih.Stop()
+        OnMessage(0x200, this._OnMouseMove, 0)
         OnMessage(0x20A, this._OnMouseWheel, 0)
+        OnMessage(0x201, this._OnLeftClick, 0)
+        OnMessage(0x202, this._OnLeftClickRelease, 0)
 
         if this._scrollTimer {
             SetTimer(this._scrollTimer, 0)
@@ -175,14 +121,57 @@ class TaskSwitcher {
     }
 
     static ActivateProgramAndCloseMenu() {
-        this.SelectProgram()
+        this.ActivateProgram()
         this.CloseMenu()
+    }
+
+    static ActivateProgram() {
+        if this._selectedRow > 0 && this._selectedRow <= this.menu.windows.Length {
+            this.__ActivateWindow(this.menu.windows[this._selectedRow])
+        }
+    }
+
+    static HighlightPreviousProgram() {
+        if this._selectedRow > 1 {
+            this._selectedRow -= 1
+            this.__ScrollToSelectedRow()
+        } else if this.wrapRowSelection {
+            this._selectedRow := this.menu.windows.Length
+            this.__ScrollToSelectedRow()
+        }
+
+        this.__DrawMenu()
+    }
+
+    static HighlightNextProgram() {
+        if this._selectedRow < this.menu.windows.Length {
+            this._selectedRow += 1
+            this.__ScrollToSelectedRow()
+        } else if this.wrapRowSelection {
+            this._selectedRow := 1
+            this.__ScrollToSelectedRow()
+        }
+
+        this.__DrawMenu()
+    }
+
+    static AltTabReplacement() {
+        HotIf((*) => !TaskSwitcher.isActive)
+        Hotkey('!Tab', (*) {
+            TaskSwitcher.OpenMenu()
+            TaskSwitcher.HighlightNextProgram()
+        })
+        HotIf((*) => TaskSwitcher.isActive)
+        Hotkey('!Tab', (*) => TaskSwitcher.HighlightNextProgram())
+        Hotkey('+!Tab', (*) => TaskSwitcher.HighlightPreviousProgram())
+        Hotkey('~*Alt up', (*) => TaskSwitcher.ActivateProgramAndCloseMenu())
     }
 
     static __CreateMenu() {
         this._windowRects := []
         this._selectedRow := 1
         this._mousedOver := 0
+        this._leftClicked := 0
         this._searchText := this.defaultSearchText
         this._scrollOffset := 0
         this._targetScrollOffset := 0    ; reset target
@@ -575,7 +564,7 @@ class TaskSwitcher {
 
         pBitmap := this._iconCache[cacheKey]
         if pBitmap && Gdip_GetImageWidth(pBitmap) {
-            ; Enable high quality scaling
+            ; enable high quality scaling
             Gdip_SetInterpolationMode(this._pGraphics, 7)  ; HighQualityBicubic
             Gdip_DrawImage(this._pGraphics, pBitmap, x, y, this._iconSize, this._iconSize)
             Gdip_SetInterpolationMode(this._pGraphics, 2)  ; Reset to default
@@ -674,7 +663,7 @@ class TaskSwitcher {
         ; check if clicking a close button
         for rect in this._closeButtonRects {
             if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
-                this.__CloseWindow(this.menu.windows[rect.actualIndex])
+                this._leftClicked := 'close' rect.actualIndex
                 return
             }
         }
@@ -682,32 +671,52 @@ class TaskSwitcher {
         ; otherwise check for row clicks
         for rect in this._windowRects {
             if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
-                this.__ActivateWindow(rect.window)
+                this._leftClicked := 'activate' rect.actualIndex
                 break
             }
         }
     }
 
-    static __OnKeyPress(wParam, lParam, msg, hwnd) {
-        matches := this._allWindows.Clone()
+    static __OnLeftClickRelease(wParam, lParam, msg, hwnd) {
+        x := lParam & 0xFFFF
+        y := lParam >> 16
 
-        vk := wParam
-        sc := (lParam >> 16) & 0xFF
-        key := GetKeyName(Format("vk{:x}sc{:x}", vk, sc))
+        ; check if clicking a close button
+        for rect in this._closeButtonRects {
+            if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
+                if 'close' . rect.actualIndex = this._leftClicked {
+                    this.__CloseWindow(this.menu.windows[rect.actualIndex])
+                }
+                return
+            }
+        }
+
+        ; otherwise check for row clicks
+        for rect in this._windowRects {
+            if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
+                if 'activate' . rect.actualIndex = this._leftClicked {
+                    this.__ActivateWindow(rect.window)
+                }
+                break
+            }
+        }
+    }
+
+    static __OnKeyPress(ih, vk, sc) {
+        matches := this._allWindows.Clone()
+        key := GetKeyName(Format('vk{:x}sc{:x}', vk, sc))
 
         switch key {
         case 'Escape':
             if this._searchText = this.defaultSearchText {
                 this.CloseMenu()
                 return
-            } else {
-                this._searchText := this.defaultSearchText
             }
 
+            this._searchText := this.defaultSearchText
+
         case 'Enter':
-            if this._selectedRow > 0 && this._selectedRow <= this.menu.windows.Length {
-                this.__ActivateWindow(this.menu.windows[this._selectedRow])
-            }
+            this.ActivateProgram()
             return
 
         case 'Backspace':
@@ -717,18 +726,18 @@ class TaskSwitcher {
                 this._searchText := SubStr(this._searchText, 1, -1)
             }
 
-        case 'NumpadUp':
-            this.SelectPreviousProgram()
+        case 'Up':
+            this.HighlightPreviousProgram()
             return
 
-        case 'NumpadDown':
-            this.SelectNextProgram()
+        case 'Down':
+            this.HighlightNextProgram()
             return
 
         case 'Space':
             this.__AddInputCharacter(' ')
 
-        case 'NumpadDel':
+        case 'Delete':
             this.__CloseWindow(this.menu.windows[this._selectedRow])
             return
 
@@ -736,7 +745,7 @@ class TaskSwitcher {
             ; get the actual character including shift state
             char := __GetCharFromVK(vk, sc)
 
-            if StrLen(key) = 1 && char != '' {
+            if StrLen(char) = 1 && char != '' {
                 this.__AddInputCharacter(char)
             } else {
                 return      ; ignore special keys
@@ -783,11 +792,6 @@ class TaskSwitcher {
         }
     }
 
-    static SelectProgram() {
-        if this._selectedRow > 0 && this._selectedRow <= this.menu.windows.Length {
-            this.__ActivateWindow(this.menu.windows[this._selectedRow])
-        }
-    }
 
     static __OnMouseWheel(wParam, lParam, msg, hwnd) {
         ; get scroll direction
@@ -889,30 +893,6 @@ class TaskSwitcher {
         WinActivate(window)
     }
 
-    static SelectPreviousProgram() {
-        if this._selectedRow > 1 {
-            this._selectedRow -= 1
-            this.__ScrollToSelectedRow()
-        } else if this.wrapRowSelection {
-            this._selectedRow := this.menu.windows.Length
-            this.__ScrollToSelectedRow()
-        }
-
-        this.__DrawMenu()
-    }
-
-    static SelectNextProgram() {
-        if this._selectedRow < this.menu.windows.Length {
-            this._selectedRow += 1
-            this.__ScrollToSelectedRow()
-        } else if this.wrapRowSelection {
-            this._selectedRow := 1
-            this.__ScrollToSelectedRow()
-        }
-
-        this.__DrawMenu()
-    }
-
     static __ScrollToSelectedRow() {
         rowWithDivider := this._rowHeight + this._dividerHeight
         selectedRowTop := (this._selectedRow - 1) * rowWithDivider
@@ -993,5 +973,55 @@ class TaskSwitcher {
             }
         }
         this._iconCache := Map()
+    }
+
+
+    static __New() {
+        this.menu := Gui('+AlwaysOnTop +ToolWindow -SysMenu -Caption +E0x80000')
+
+        this._OnMouseMove        := ObjBindMethod(this, '__OnMouseMove')
+        this._OnLeftClick        := ObjBindMethod(this, '__OnLeftClick')
+        this._OnLeftClickRelease := ObjBindMethod(this, '__OnLeftClickRelease')
+        this._OnMouseWheel       := ObjBindMethod(this, '__OnMouseWheel')
+
+        this._ih := InputHook('L0 V')
+        this._ih.KeyOpt('{All}', 'N')
+        this._ih.OnKeyDown := ObjBindMethod(this, '__OnKeyPress')
+
+        ; closes task switcher if left click happens outside the menu
+        HotIf((*) => TaskSwitcher.isOpen && !TaskSwitcher.hasMouseOver)
+        Hotkey('~*LButton', (*) => this.CloseMenu())
+
+        ; GDI+ objects
+        this._hBitmap := 0
+        this._hdc := 0
+        this._pGraphics := 0
+        this._pBitmap := 0
+
+        this._sortedWindows := false
+
+        ; cache for icons
+        this._iconCache := Map()
+
+        ; store all windows for filtering
+        this._allWindows := []
+
+        ; dimensions
+        this._maxWidth := 700
+        this._bannerHeight := 50
+        this._rowHeight := 75
+        this._marginX := 12
+        this._marginY := 12
+        this._iconSize := 32
+        this._dividerHeight := 1
+
+        this._scrollOffset := 0
+        this._targetScrollOffset := 0
+        this._scrollSpeed := 20
+        this._maxVisibleRows := 8
+        this._hoveredCloseButton := 0
+        this._mousedOver := 0
+        this._leftClicked := 0
+        this._closeButtonRects := []
     }
 }
