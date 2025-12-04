@@ -468,25 +468,25 @@ class TaskSwitcher {
     }
 
     static __GetProgramName(path) {
-        size := DllCall("version\GetFileVersionInfoSizeW", "str", path, "uint*", 0, "uint")
+        size := DllCall('version\GetFileVersionInfoSizeW', 'str', path, 'uint*', 0, 'uint')
         if !size {
             return
         }
 
         buf := Buffer(size)
-        if !DllCall("version\GetFileVersionInfoW", "str", path, "uint", 0, "uint", size, "ptr", buf) {
+        if !DllCall('version\GetFileVersionInfoW', 'str', path, 'uint', 0, 'uint', size, 'ptr', buf) {
             return
         }
 
         Query(val) {
             ptr := 0, len := 0
-            if DllCall("version\VerQueryValueW",
-                "ptr", buf,
-                "str", "\StringFileInfo\040904b0\" val,
-                "ptr*", &ptr,
-                "uint*", &len)
+            if DllCall('version\VerQueryValueW',
+                'ptr', buf,
+                'str', '\StringFileInfo\040904b0\' val,
+                'ptr*', &ptr,
+                'uint*', &len)
             {
-                return StrGet(ptr, "UTF-16")
+                return StrGet(ptr, 'UTF-16')
             }
         }
 
@@ -495,53 +495,48 @@ class TaskSwitcher {
 
     static __DrawIcon(window, x, y) {
         hwnd := window.hwnd
+        path := WinGetProcessPath(hwnd)
+
+        ; use actual app path for cache key, not ApplicationFrameHost
         cacheKey := window.processName
+
+        ; for ApplicationFrameHost, try to get the real app
+        if InStr(path, 'ApplicationFrameHost.exe') {
+            try {
+                uwpPath := this.__GetLargestUWPLogoPath(hwnd)
+                if uwpPath {
+                    cacheKey := uwpPath  ; use UWP path as cache key
+                }
+            }
+        }
 
         if !this._iconCache.Has(cacheKey) {
             pBitmap := 0
 
-            ; try to extract icon at higher resolution (256x256) for better quality
             try {
-                path := WinGetProcessPath(hwnd)
-
-                ; use PrivateExtractIcons to get large icon (256x256)
-                hIcon := 0
-                DllCall('PrivateExtractIcons', 'Str', path, 'Int', 0, 'Int', 256, 'Int', 256, 'Ptr*', &hIcon, 'Ptr*', 0, 'UInt', 1, 'UInt', 0)
-
-                if hIcon {
-                    pBitmap := Gdip_CreateBitmapFromHICON(hIcon)
-                    DllCall('DestroyIcon', 'Ptr', hIcon)
-                }
-
-                ; if 256 failed, try 128
-                if !pBitmap {
-                    hIcon := 0
-                    DllCall('PrivateExtractIcons', 'Str', path, 'Int', 0, 'Int', 128, 'Int', 128, 'Ptr*', &hIcon, 'Ptr*', 0, 'UInt', 1, 'UInt', 0)
-
-                    if hIcon {
-                        pBitmap := Gdip_CreateBitmapFromHICON(hIcon)
-                        DllCall('DestroyIcon', 'Ptr', hIcon)
+                ; try UWP first for WindowsApps or ApplicationFrameHost
+                if InStr(path, 'WindowsApps') || InStr(path, 'ApplicationFrameHost') {
+                    try {
+                        uwpPath := this.__GetLargestUWPLogoPath(hwnd)
+                        if uwpPath && FileExist(uwpPath) {
+                            pBitmap := Gdip_CreateBitmapFromFile(uwpPath)
+                        }
                     }
                 }
 
-                ; if still nothing, try 48
+                ; if no UWP icon, try regular extraction
                 if !pBitmap {
-                    hIcon := 0
-                    DllCall('PrivateExtractIcons', 'Str', path, 'Int', 0, 'Int', 48, 'Int', 48, 'Ptr*', &hIcon, 'Ptr*', 0, 'UInt', 1, 'UInt', 0)
+                    for size in [256, 128, 48] {
+                        if pBitmap
+                            break
 
-                    if hIcon {
-                        pBitmap := Gdip_CreateBitmapFromHICON(hIcon)
-                        DllCall('DestroyIcon', 'Ptr', hIcon)
-                    }
-                }
-            }
+                        hIcon := 0
+                        DllCall('PrivateExtractIcons', 'Str', path, 'Int', 0, 'Int', size, 'Int', size, 'Ptr*', &hIcon, 'Ptr*', 0, 'UInt', 1, 'UInt', 0)
 
-            ; try UWP icon if regular icon failed
-            if !pBitmap {
-                try {
-                    uwpPath := this.__GetLargestUWPLogoPath(hwnd)
-                    if uwpPath {
-                        pBitmap := Gdip_CreateBitmapFromFile(uwpPath)
+                        if hIcon {
+                            pBitmap := Gdip_CreateBitmapFromHICON(hIcon)
+                            DllCall('DestroyIcon', 'Ptr', hIcon)
+                        }
                     }
                 }
             }
@@ -550,11 +545,11 @@ class TaskSwitcher {
             if !pBitmap {
                 try {
                     hIcon := 0
-                    DllCall("PrivateExtractIcons", "Str", "shell32.dll", "Int", 0, "Int", 48, "Int", 48, "Ptr*", &hIcon, "Ptr*", 0, "UInt", 1, "UInt", 0)
+                    DllCall('PrivateExtractIcons', 'Str', 'shell32.dll', 'Int', 0, 'Int', 48, 'Int', 48, 'Ptr*', &hIcon, 'Ptr*', 0, 'UInt', 1, 'UInt', 0)
 
                     if hIcon {
                         pBitmap := Gdip_CreateBitmapFromHICON(hIcon)
-                        DllCall("DestroyIcon", "Ptr", hIcon)
+                        DllCall('DestroyIcon', 'Ptr', hIcon)
                     }
                 }
             }
@@ -564,10 +559,9 @@ class TaskSwitcher {
 
         pBitmap := this._iconCache[cacheKey]
         if pBitmap && Gdip_GetImageWidth(pBitmap) {
-            ; enable high quality scaling
-            Gdip_SetInterpolationMode(this._pGraphics, 7)  ; HighQualityBicubic
+            Gdip_SetInterpolationMode(this._pGraphics, 7)
             Gdip_DrawImage(this._pGraphics, pBitmap, x, y, this._iconSize, this._iconSize)
-            Gdip_SetInterpolationMode(this._pGraphics, 2)  ; Reset to default
+            Gdip_SetInterpolationMode(this._pGraphics, 2)
         }
     }
 
@@ -575,7 +569,25 @@ class TaskSwitcher {
         Address := CallbackCreate(EnumChildProc.Bind(WinGetPID(hwnd)), 'Fast', 2)
         DllCall('User32.dll\EnumChildWindows', 'Ptr', hwnd, 'Ptr', Address, 'UInt*', &ChildPID := 0, 'Int')
         CallbackFree(Address)
-        return ChildPID && AppHasPackage(ChildPID) ? GetLargestLogoPath(GetDefaultLogoPath(ProcessGetPath(ChildPID))) : ''
+
+        ; if no child PID, use the main window's PID
+        if !ChildPID {
+            ChildPID := WinGetPID(hwnd)
+        }
+
+        if !AppHasPackage(ChildPID) {
+            return
+        }
+
+        try {
+            processPath := ProcessGetPath(ChildPID)
+            defaultLogoPath := GetDefaultLogoPath(processPath)
+            largestPath := GetLargestLogoPath(defaultLogoPath)
+
+            return largestPath
+        } catch as e {
+            return
+        }
 
         EnumChildProc(PID, hwnd, lParam) {
             ChildPID := WinGetPID(hwnd)
@@ -610,7 +622,7 @@ class TaskSwitcher {
                     LoopFilePath := A_LoopFilePath, LoopFileSize := A_LoopFileSize
                 }
             }
-            return LoopFilePath
+            return LoopFilePath ?? ''
         }
     }
 
@@ -940,7 +952,7 @@ class TaskSwitcher {
                 }
 
                 title := WinGetTitle(hwnd)
-                if (title = "") {
+                if (title = '') {
                     continue
                 }
 
