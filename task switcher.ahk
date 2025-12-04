@@ -37,9 +37,9 @@ Suspend(false)
  */
 ; Simple hotkey
 $F1::TaskSwitcher.OpenMenu()
+$F2::TaskSwitcher.AltTabReplacement('Toggle')
 $<^RCtrl::TaskSwitcher.OpenMenuSorted()
 $>^LCtrl::TaskSwitcher.OpenMenuSorted()
-$F2::TaskSwitcher.AltTabReplacement('Toggle')
 
 ; Hotkey setup to replace AltTab behavior
 TaskSwitcher.AltTabReplacement()
@@ -200,6 +200,8 @@ class TaskSwitcher {
         this._mousedOver := 0
         this._leftClicked := 0
         this._searchText := this.defaultSearchText
+        this._mouseLeft := true
+
         this._scrollOffset := 0
         this._targetScrollOffset := 0    ; reset target
         this._scrollTimer := 0           ; reset timer
@@ -669,7 +671,11 @@ class TaskSwitcher {
     }
 
     static __OnMouseMove(wParam, lParam, msg, hwnd) {
-        TrackMouseLeave(hwnd)   ; required for OnMouseLeave to work correctly
+        static tme := TrackMouseLeave(hwnd)   ; required for OnMouseLeave to work correctly
+        if this._mouseLeft {
+            this._mouseLeft := false
+            DllCall('user32.dll\TrackMouseEvent', 'Ptr', tme)
+        }
 
         x := lParam & 0xFFFF
         y := lParam >> 16
@@ -698,16 +704,15 @@ class TaskSwitcher {
         }
 
         TrackMouseLeave(hwnd) {
-            static TME_LEAVE := 0x00000002
-            static size := A_PtrSize = 8 ? 24 : 16    ; TRACKMOUSEEVENT struct size
+            TME_LEAVE := 0x00000002
+            size := A_PtrSize = 8 ? 24 : 16    ; TRACKMOUSEEVENT struct size
 
             tme := Buffer(size, 0)
             NumPut('UInt', size,          tme, 0)                     ; cbSize
             NumPut('UInt', TME_LEAVE,     tme, 4)                     ; dwFlags
             NumPut('Ptr',  hwnd,          tme, 8)                     ; hwndTrack
             NumPut('UInt', 0,             tme, A_PtrSize = 8 ? 16 : 12)
-
-            DllCall('user32.dll\TrackMouseEvent', 'Ptr', tme)
+            return tme
         }
     }
 
@@ -941,6 +946,7 @@ class TaskSwitcher {
 
     static __OnMouseLeave(*) {
         this._mousedOver := 0
+        this._mouseLeft := true
         this.__DrawMenu()
     }
 
@@ -1099,6 +1105,7 @@ class TaskSwitcher {
         this._hoveredCloseButton := 0
         this._mousedOver := 0
         this._leftClicked := 0
+        this._mouseLeft := true
         this._closeButtonRects := []
     }
 }
