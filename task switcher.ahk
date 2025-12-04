@@ -689,11 +689,14 @@ class TaskSwitcher {
             }
         }
 
+        ; check row hovers
         newHover := 0
-        for rect in this._windowRects {
-            if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
-                newHover := rect.actualIndex
-                break
+        if !newHoveredCloseButton {
+            for rect in this._windowRects {
+                if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
+                    newHover := rect.actualIndex
+                    break
+                }
             }
         }
 
@@ -1059,7 +1062,7 @@ class TaskSwitcher {
 
 
     static __New() {
-        this.menu := Gui('+AlwaysOnTop +ToolWindow -SysMenu  +E0x80000')
+        this.menu := Gui('+AlwaysOnTop +ToolWindow -SysMenu -Caption +E0x80000')
 
         this._OnMouseMove        := ObjBindMethod(this, '__OnMouseMove')
         this._OnMouseWheel       := ObjBindMethod(this, '__OnMouseWheel')
