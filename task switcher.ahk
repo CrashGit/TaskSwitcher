@@ -25,7 +25,8 @@ TaskSwitcher({
     defaultSearchText: 'Search...',
     searchBackgroundColor: 0xFF333333,
     highlightTextColor: 0xFF00FF33,
-    mouseHighlightTextColor: 0xFF999999
+    mouseHighlightTextColor: 0xFF999999,
+    escapeAlwaysClose: true
 })
 
 Suspend(false)
@@ -38,6 +39,7 @@ Suspend(false)
 $F1::TaskSwitcher.OpenMenu()
 $<^RCtrl::TaskSwitcher.OpenMenuSorted()
 $>^LCtrl::TaskSwitcher.OpenMenuSorted()
+$F2::TaskSwitcher.AltTabReplacement('Toggle')
 
 ; Hotkey setup to replace AltTab behavior
 TaskSwitcher.AltTabReplacement()
@@ -64,6 +66,8 @@ class TaskSwitcher {
     static defaultSearchText := ''
     static searchTextColor := 'ffc8c8c8'
     static searchBackgroundColor := this.searchTextColor
+    static escapeAlwaysClose := false
+
 
 
     static isOpen => WinExist('ahk_id' this.menu.Hwnd)
@@ -92,6 +96,7 @@ class TaskSwitcher {
         ; setup message handlers
         OnMessage(0x200, this._OnMouseMove)
         OnMessage(0x20A, this._OnMouseWheel)
+        OnMessage(0x2A3, this._OnMouseLeave)
         OnMessage(0x201, this._OnLeftClick)
         OnMessage(0x202, this._OnLeftClickRelease)
 
@@ -105,9 +110,11 @@ class TaskSwitcher {
             return
         }
 
+        this.menu.Hide()
         this._ih.Stop()
         OnMessage(0x200, this._OnMouseMove, 0)
         OnMessage(0x20A, this._OnMouseWheel, 0)
+        OnMessage(0x2A3, this._OnMouseLeave, 0)
         OnMessage(0x201, this._OnLeftClick, 0)
         OnMessage(0x202, this._OnLeftClickRelease, 0)
 
@@ -116,7 +123,6 @@ class TaskSwitcher {
             this._scrollTimer := 0
         }
 
-        this.menu.Hide()
         this.__GDIP_Cleanup
     }
 
@@ -155,16 +161,36 @@ class TaskSwitcher {
         this.__DrawMenu()
     }
 
-    static AltTabReplacement() {
+    ; pass 'Off' if you ever want to disable those hotkeys after already being active
+    ; pass 'Toggle' if you want to toggle the state
+    static AltTabReplacement(state := 'On') {
+        static altTabHotkeysEnabled := false,
+            previousState := state
+
+        if state = 'Toggle' {
+            state := previousState = 'On' ? 'Off' : 'On'
+        }
+
         HotIf((*) => !TaskSwitcher.isActive)
         Hotkey('!Tab', (*) {
             TaskSwitcher.OpenMenu()
             TaskSwitcher.HighlightNextProgram()
-        })
+            altTabHotkeysEnabled := true
+        }, state)
+
         HotIf((*) => TaskSwitcher.isActive)
-        Hotkey('!Tab', (*) => TaskSwitcher.HighlightNextProgram())
-        Hotkey('+!Tab', (*) => TaskSwitcher.HighlightPreviousProgram())
-        Hotkey('~*Alt up', (*) => TaskSwitcher.ActivateProgramAndCloseMenu())
+        Hotkey('!Tab', (*) => TaskSwitcher.HighlightNextProgram(), state)
+        Hotkey('+!Tab', (*) => TaskSwitcher.HighlightPreviousProgram(), state)
+        Hotkey('~*Alt up', (*) {
+            ; prevents alt release from closing window if it wasn't opened with alt-tab method
+            ; this is in case anyone uses hotkeys that allow something like alt+up/down to navigate, the menu will not close when releasing alt
+            if altTabHotkeysEnabled {
+                TaskSwitcher.ActivateProgramAndCloseMenu()
+                altTabHotkeysEnabled := false
+            }
+        }, state)
+
+        previousState := state
     }
 
     static __CreateMenu() {
@@ -498,10 +524,10 @@ class TaskSwitcher {
         path := WinGetProcessPath(hwnd)
 
         ; use actual app path for cache key, not ApplicationFrameHost
-        cacheKey := window.processName
+        cacheKey := path
 
         ; for ApplicationFrameHost, try to get the real app
-        if InStr(path, 'ApplicationFrameHost.exe') {
+        if InStr(path, "ApplicationFrameHost.exe") {
             try {
                 uwpPath := this.__GetLargestUWPLogoPath(hwnd)
                 if uwpPath {
@@ -512,14 +538,18 @@ class TaskSwitcher {
 
         if !this._iconCache.Has(cacheKey) {
             pBitmap := 0
+            isUWP := false
 
             try {
-                ; try UWP first for WindowsApps or ApplicationFrameHost
-                if InStr(path, 'WindowsApps') || InStr(path, 'ApplicationFrameHost') {
+                ; try UWP FIRST for WindowsApps or ApplicationFrameHost
+                if InStr(path, "WindowsApps") || InStr(path, "ApplicationFrameHost") {
                     try {
                         uwpPath := this.__GetLargestUWPLogoPath(hwnd)
                         if uwpPath && FileExist(uwpPath) {
                             pBitmap := Gdip_CreateBitmapFromFile(uwpPath)
+                            if pBitmap {
+                                isUWP := true  ; Only mark as UWP if we actually got the bitmap
+                            }
                         }
                     }
                 }
@@ -527,15 +557,13 @@ class TaskSwitcher {
                 ; if no UWP icon, try regular extraction
                 if !pBitmap {
                     for size in [256, 128, 48] {
-                        if pBitmap
-                            break
-
                         hIcon := 0
                         DllCall('PrivateExtractIcons', 'Str', path, 'Int', 0, 'Int', size, 'Int', size, 'Ptr*', &hIcon, 'Ptr*', 0, 'UInt', 1, 'UInt', 0)
 
                         if hIcon {
                             pBitmap := Gdip_CreateBitmapFromHICON(hIcon)
                             DllCall('DestroyIcon', 'Ptr', hIcon)
+                            break
                         }
                     }
                 }
@@ -545,22 +573,33 @@ class TaskSwitcher {
             if !pBitmap {
                 try {
                     hIcon := 0
-                    DllCall('PrivateExtractIcons', 'Str', 'shell32.dll', 'Int', 0, 'Int', 48, 'Int', 48, 'Ptr*', &hIcon, 'Ptr*', 0, 'UInt', 1, 'UInt', 0)
+                    DllCall("PrivateExtractIcons", "Str", "shell32.dll", "Int", 0, "Int", 48, "Int", 48, "Ptr*", &hIcon, "Ptr*", 0, "UInt", 1, "UInt", 0)
 
                     if hIcon {
                         pBitmap := Gdip_CreateBitmapFromHICON(hIcon)
-                        DllCall('DestroyIcon', 'Ptr', hIcon)
+                        DllCall("DestroyIcon", "Ptr", hIcon)
                     }
                 }
             }
 
-            this._iconCache[cacheKey] := pBitmap ? pBitmap : 0
+            this._iconCache[cacheKey] := {bitmap: pBitmap, isUWP: isUWP}
         }
 
-        pBitmap := this._iconCache[cacheKey]
+        iconData := this._iconCache[cacheKey]
+        pBitmap := iconData.bitmap
+
         if pBitmap && Gdip_GetImageWidth(pBitmap) {
             Gdip_SetInterpolationMode(this._pGraphics, 7)
-            Gdip_DrawImage(this._pGraphics, pBitmap, x, y, this._iconSize, this._iconSize)
+
+            ; draw UWP icons slightly larger to compensate for smaller source images
+            if iconData.isUWP {
+                drawSize := this._iconSize * 1.25  ; 25% larger
+                offset := (this._iconSize - drawSize) / 2  ; Center it
+                Gdip_DrawImage(this._pGraphics, pBitmap, x + offset, y + offset, drawSize, drawSize)
+            } else {
+                Gdip_DrawImage(this._pGraphics, pBitmap, x, y, this._iconSize, this._iconSize)
+            }
+
             Gdip_SetInterpolationMode(this._pGraphics, 2)
         }
     }
@@ -627,7 +666,7 @@ class TaskSwitcher {
     }
 
     static __OnMouseMove(wParam, lParam, msg, hwnd) {
-        static lastX := 0, lastY := 0
+        TrackMouseLeave(hwnd)   ; required for OnMouseLeave to work correctly
 
         x := lParam & 0xFFFF
         y := lParam >> 16
@@ -653,6 +692,19 @@ class TaskSwitcher {
             this._mousedOver := newHover
             this._hoveredCloseButton := newHoveredCloseButton
             this.__DrawMenu()
+        }
+
+        TrackMouseLeave(hwnd) {
+            static TME_LEAVE := 0x00000002
+            static size := A_PtrSize = 8 ? 24 : 16    ; TRACKMOUSEEVENT struct size
+
+            tme := Buffer(size, 0)
+            NumPut('UInt', size,          tme, 0)                     ; cbSize
+            NumPut('UInt', TME_LEAVE,     tme, 4)                     ; dwFlags
+            NumPut('Ptr',  hwnd,          tme, 8)                     ; hwndTrack
+            NumPut('UInt', 0,             tme, A_PtrSize = 8 ? 16 : 12)
+
+            DllCall('user32.dll\TrackMouseEvent', 'Ptr', tme)
         }
     }
 
@@ -720,7 +772,7 @@ class TaskSwitcher {
 
         switch key {
         case 'Escape':
-            if this._searchText = this.defaultSearchText {
+            if this.escapeAlwaysClose || this._searchText = this.defaultSearchText {
                 this.CloseMenu()
                 return
             }
@@ -760,7 +812,8 @@ class TaskSwitcher {
             if StrLen(char) = 1 && char != '' {
                 this.__AddInputCharacter(char)
             } else {
-                return      ; ignore special keys
+                ; ignore special keys
+                return
             }
         }
 
@@ -883,6 +936,11 @@ class TaskSwitcher {
         }
     }
 
+    static __OnMouseLeave(*) {
+        this._mousedOver := 0
+        this.__DrawMenu()
+    }
+
     static __ScrollUp() {
         if this._scrollOffset > 0 {
             this._scrollOffset--
@@ -978,10 +1036,13 @@ class TaskSwitcher {
             this._hBitmap := 0
         }
 
-        ; cleanup cached icons
-        for key, pBitmap in this._iconCache {
-            if pBitmap {
-                Gdip_DisposeImage(pBitmap)
+        ; cleanup cached icons - extract bitmap from object
+        for key, iconData in this._iconCache {
+            if iconData && IsObject(iconData) && iconData.HasProp('bitmap') && iconData.bitmap {
+                Gdip_DisposeImage(iconData.bitmap)
+            } else if iconData && !IsObject(iconData) {
+                ; handle old cached items that are just pointers
+                Gdip_DisposeImage(iconData)
             }
         }
         this._iconCache := Map()
@@ -989,12 +1050,13 @@ class TaskSwitcher {
 
 
     static __New() {
-        this.menu := Gui('+AlwaysOnTop +ToolWindow -SysMenu -Caption +E0x80000')
+        this.menu := Gui('+AlwaysOnTop +ToolWindow -SysMenu  +E0x80000')
 
         this._OnMouseMove        := ObjBindMethod(this, '__OnMouseMove')
+        this._OnMouseWheel       := ObjBindMethod(this, '__OnMouseWheel')
+        this._OnMouseLeave       := ObjBindMethod(this, '__OnMouseLeave')
         this._OnLeftClick        := ObjBindMethod(this, '__OnLeftClick')
         this._OnLeftClickRelease := ObjBindMethod(this, '__OnLeftClickRelease')
-        this._OnMouseWheel       := ObjBindMethod(this, '__OnMouseWheel')
 
         this._ih := InputHook('L0 V')
         this._ih.KeyOpt('{All}', 'N')
