@@ -237,8 +237,10 @@ class TaskSwitcher {
     }
 
     static __CloseWindow(window) {
+        this._ih.Stop()
         WinClose(window.hwnd)
         WinWaitClose(window.hwnd)
+        this._ih.Start()
 
         this.__RefreshWindows()
         this.__ApplySearchFilter()
