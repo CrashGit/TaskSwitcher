@@ -110,8 +110,8 @@ class TaskSwitcher {
             return
         }
 
-        this.menu.Hide()
         this._ih.Stop()
+        this.menu.Hide()
         OnMessage(0x200, this._OnMouseMove, 0)
         OnMessage(0x20A, this._OnMouseWheel, 0)
         OnMessage(0x2A3, this._OnMouseLeave, 0)
@@ -123,7 +123,7 @@ class TaskSwitcher {
             this._scrollTimer := 0
         }
 
-        this.__GDIP_Cleanup
+        this.__GDIP_Cleanup()
     }
 
     static ActivateProgramAndCloseMenu() {
@@ -173,14 +173,15 @@ class TaskSwitcher {
 
         HotIf((*) => !TaskSwitcher.isActive)
         Hotkey('!Tab', (*) {
+            altTabHotkeysEnabled := true
             TaskSwitcher.OpenMenu()
             TaskSwitcher.HighlightNextProgram()
-            altTabHotkeysEnabled := true
         }, state)
 
         HotIf((*) => TaskSwitcher.isActive)
         Hotkey('!Tab', (*) => TaskSwitcher.HighlightNextProgram(), state)
         Hotkey('+!Tab', (*) => TaskSwitcher.HighlightPreviousProgram(), state)
+        HotIf((*) => altTabHotkeysEnabled)
         Hotkey('~*Alt up', (*) {
             ; prevents alt release from closing window if it wasn't opened with alt-tab method
             ; this is in case anyone uses hotkeys that allow something like alt+up/down to navigate, the menu will not close when releasing alt
