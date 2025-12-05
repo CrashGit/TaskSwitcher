@@ -154,7 +154,7 @@ class TaskSwitcher {
     ; pass 'Toggle' if you want to toggle the state
     static AltTabReplacement(state := 'On') {
         static altTabHotkeysEnabled := false,
-            previousState := state
+               previousState := state
 
         if state = 'Toggle' {
             state := previousState = 'On' ? 'Off' : 'On'
@@ -171,13 +171,19 @@ class TaskSwitcher {
         Hotkey('!Tab', (*) => TaskSwitcher.SelectNextWindow(), state)
         Hotkey('+!Tab', (*) => TaskSwitcher.SelectPreviousWindow(), state)
 
+
         HotIf((*) => altTabHotkeysEnabled)
         Hotkey('~*Alt up', (*) {
             ; prevents alt release from closing window if it wasn't opened with alt-tab method
             ; this is in case anyone uses hotkeys that allow something like alt+up/down to navigate, the menu will not close when releasing alt
-            TaskSwitcher.ActivateWindowAndCloseMenu()
             altTabHotkeysEnabled := false
+            if TaskSwitcher.isActive {
+                TaskSwitcher.ActivateWindowAndCloseMenu()
+            } else if TaskSwitcher.isOpen {
+                TaskSwitcher.CloseMenu()
+            }
         }, state)
+        HotIf()
 
         previousState := state
     }
@@ -1068,6 +1074,7 @@ class TaskSwitcher {
         ; closes task switcher if left click happens outside the menu
         HotIf((*) => TaskSwitcher.isOpen && !TaskSwitcher.hasMouseOver)
         Hotkey('~*LButton', (*) => this.CloseMenu())
+        HotIf()
 
         ; GDI+ objects
         this._hBitmap := 0
