@@ -21,7 +21,7 @@ OnExit((*) => Gdip_Shutdown(pToken))
 class TaskSwitcher {
     ; @options that can be changed here or used as a property name when passing options to TaskSwitcher({option: value})
     ; Note - options that go through Gdip_TextToGraphics require ARGB format as a string (e.g. 'FF00FF00' is green)
-    ;       while other color options use 0xARGB as a hex number (e.g. 0xFF00FF00 is green)
+    ;        while other color options use 0xARGB as a hex number (e.g. 0xFF00FF00 is green)
     static defaultTextColor := 0xFFFFFFFF
     static highlightTextColor := 0xFF6995DB
     static rowHighlightColor := 0x30FFFFFF
@@ -114,9 +114,11 @@ class TaskSwitcher {
     }
 
     static ActivateWindow() {
-        window := this.menu.windows[this._selectedRow]
-            this._onWindowActivate(window)
-        if this.__ActivateWindow(window) {
+        if this.menu.windows.Has(this._selectedRow) {
+            window := this.menu.windows[this._selectedRow]
+            if this.__ActivateWindow(window) {
+                this._onWindowActivate(window)
+            }
         }
     }
 
@@ -158,7 +160,7 @@ class TaskSwitcher {
             state := previousState = 'On' ? 'Off' : 'On'
         }
 
-        HotIf((*) => !TaskSwitcher.isActive)
+        HotIf((*) => !TaskSwitcher.isOpen)
         Hotkey('!Tab', (*) {
             altTabHotkeysEnabled := true
             TaskSwitcher.OpenMenu()
@@ -168,14 +170,13 @@ class TaskSwitcher {
         HotIf((*) => TaskSwitcher.isActive)
         Hotkey('!Tab', (*) => TaskSwitcher.SelectNextWindow(), state)
         Hotkey('+!Tab', (*) => TaskSwitcher.SelectPreviousWindow(), state)
+
         HotIf((*) => altTabHotkeysEnabled)
         Hotkey('~*Alt up', (*) {
             ; prevents alt release from closing window if it wasn't opened with alt-tab method
             ; this is in case anyone uses hotkeys that allow something like alt+up/down to navigate, the menu will not close when releasing alt
-            if altTabHotkeysEnabled {
-                TaskSwitcher.ActivateWindowAndCloseMenu()
-                altTabHotkeysEnabled := false
-            }
+            TaskSwitcher.ActivateWindowAndCloseMenu()
+            altTabHotkeysEnabled := false
         }, state)
 
         previousState := state
