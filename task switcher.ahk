@@ -22,21 +22,27 @@ class TaskSwitcher {
     ; @options that can be changed here or used as a property name when passing options to TaskSwitcher({option: value})
     ; Note - options that go through Gdip_TextToGraphics require ARGB format as a string (e.g. 'FF00FF00' is green)
     ;        while other color options use 0xARGB as a hex number (e.g. 0xFF00FF00 is green)
-    static defaultTextColor := 0xFFFFFFFF
-    static highlightTextColor := 0xFF6995DB
-    static rowHighlightColor := 0x30FFFFFF
-    static mouseHighlightTextColor := this.highlightTextColor
-    static backgroundColor := 0xFF333333
-    static dividerColor := 0xFFFFFFFF
-    static bannerColor := 0xFF1B56B5
-    static bannerTextColor := 'FFFFFFFF'
-    static bannerText := 'Task Switcher'
-    static wrapRowSelection := true
-    static alwaysHighlightFirst := false
-    static defaultSearchText := ''
-    static searchTextColor := 'ffc8c8c8'
-    static searchBackgroundColor := this.searchTextColor
-    static escapeAlwaysClose := false
+    static defaultTextColor                 := 0xFFFFFFFF,
+           highlightTextColor               := 0xFF6995DB,
+           rowHighlightColor                := 0x30FFFFFF,
+           mouseHighlightTextColor          := this.highlightTextColor,
+           backgroundColor                  := 0xFF333333,
+           dividerColor                     := 0xFFFFFFFF,
+           bannerColor                      := 0xFF1B56B5,
+           bannerTextColor                  := 'FFFFFFFF',
+           bannerText                       := 'Task Switcher',
+           wrapRowSelection                 := true,
+           alwaysHighlightFirst             := false,
+           defaultSearchText                := '',
+           searchTextColor                  := 'ffc8c8c8',
+           searchBackgroundColor            := this.searchTextColor,
+           closeBackgroundColor             := 0x40FFFFFF,
+           closeBackgroundHighlightColor    := 0x80FF0000,
+           closeXColor                      := 0xFFAAAAAA,
+           closeXHighlightColor             := 0xFFFFFFFF,
+           showAllCloseButtons              := false,
+           closeButtonSize                  := 24,
+           escapeAlwaysClose                := false
 
 
     static isOpen => WinExist('ahk_id' this.menu.Hwnd)
@@ -171,7 +177,6 @@ class TaskSwitcher {
         Hotkey('!Tab', (*) => TaskSwitcher.SelectNextWindow(), state)
         Hotkey('+!Tab', (*) => TaskSwitcher.SelectPreviousWindow(), state)
 
-
         HotIf((*) => altTabHotkeysEnabled)
         Hotkey('~*Alt up', (*) {
             ; prevents alt release from closing window if it wasn't opened with alt-tab method
@@ -191,7 +196,7 @@ class TaskSwitcher {
     static __CreateMenu() {
         this._windowRects := []
         this._selectedRow := 1
-        this._mousedOver := 0
+        this._hoveredOver := 0
         this._leftClicked := 0
         this._searchText := this.defaultSearchText
         this._mouseLeft := true
@@ -276,9 +281,10 @@ class TaskSwitcher {
     }
 
     static __DrawMenu() {
-        totalHeight := this.__CalculateTotalHeight()
-
         ; clear background
+        Gdip_GraphicsClear(this._pGraphics, 0x00000000)
+
+        totalHeight := this.__CalculateTotalHeight()
         pBrush := Gdip_BrushCreateSolid(this.backgroundColor)
         Gdip_FillRectangle(this._pGraphics, pBrush, 0, 0, this._maxWidth, totalHeight)
         Gdip_DeleteBrush(pBrush)
@@ -356,7 +362,7 @@ class TaskSwitcher {
             switch index {
             case this._selectedRow:
                 textColor := this.highlightTextColor
-            case this._mousedOver:
+            case this._hoveredOver:
                 textColor := this.mouseHighlightTextColor
             default:
                 textColor := this.defaultTextColor
@@ -368,37 +374,42 @@ class TaskSwitcher {
             Gdip_TextToGraphics(this._pGraphics, window.name, windowOptions, 'Arial', this._maxWidth - titleX - this._marginX - 40, this._rowHeight)
             Gdip_TextToGraphics(this._pGraphics, window.title, titleOptions, 'Arial', this._maxWidth - titleX - this._marginX - 40, this._rowHeight)
 
-            ; draw close button (X)
-            closeButtonSize := 24
-            closeButtonX := this._maxWidth - this._marginX - closeButtonSize - 10
-            closeButtonY := rowY + (this._rowHeight - closeButtonSize) / 2
-
-            this._closeButtonRects.Push({
-                x: closeButtonX,
-                y: closeButtonY,
-                w: closeButtonSize,
-                h: closeButtonSize,
-                actualIndex: index
-            })
-
             ; check if mouse is over this close button
             isHoveringCloseButton := (this._hoveredCloseButton = index)
 
-            ; draw close button background (highlight if hovering)
-            if isHoveringCloseButton {
-                pBrushClose := Gdip_BrushCreateSolid(0x80FF0000)  ; Semi-transparent red
-            } else {
-                pBrushClose := Gdip_BrushCreateSolid(0x40FFFFFF)  ; Semi-transparent white
-            }
-            Gdip_FillEllipse(this._pGraphics, pBrushClose, closeButtonX, closeButtonY, closeButtonSize, closeButtonSize)
-            Gdip_DeleteBrush(pBrushClose)
+            ; draw close button (X)
+            if this.showAllCloseButtons || this._hoveredOver = index || isHoveringCloseButton {
+                closeButtonSize := this.closeButtonSize
+                closeButtonX := this._maxWidth - this._marginX - closeButtonSize - 10
+                closeButtonY := rowY + (this._rowHeight - closeButtonSize) / 2
 
-            ; draw X
-            pPen := Gdip_CreatePen(isHoveringCloseButton ? 0xFFFFFFFF : 0xFFAAAAAA, 2)
-            offset := 6
-            Gdip_DrawLine(this._pGraphics, pPen, closeButtonX + offset, closeButtonY + offset, closeButtonX + closeButtonSize - offset, closeButtonY + closeButtonSize - offset)
-            Gdip_DrawLine(this._pGraphics, pPen, closeButtonX + closeButtonSize - offset, closeButtonY + offset, closeButtonX + offset, closeButtonY + closeButtonSize - offset)
-            Gdip_DeletePen(pPen)
+                this._closeButtonRects.Push({
+                    x: closeButtonX,
+                    y: closeButtonY,
+                    w: closeButtonSize,
+                    h: closeButtonSize,
+                    actualIndex: index,
+                })
+
+                ; create tools for drawing close button background and the x
+                if isHoveringCloseButton {  ; determines highlighting
+                    pBrushClose := Gdip_BrushCreateSolid(this.closeBackgroundHighlightColor)
+                    pPen := Gdip_CreatePen(this.closeXHighlightColor, 2)
+                } else {
+                    pBrushClose := Gdip_BrushCreateSolid(this.closeBackgroundColor)
+                    pPen := Gdip_CreatePen(this.closeXColor, 2)
+                }
+
+                ; draw close button background
+                Gdip_FillEllipse(this._pGraphics, pBrushClose, closeButtonX, closeButtonY, closeButtonSize, closeButtonSize)
+                Gdip_DeleteBrush(pBrushClose)
+
+                ; draw x
+                offset := closeButtonSize / 4
+                Gdip_DrawLine(this._pGraphics, pPen, closeButtonX + offset, closeButtonY + offset, closeButtonX + closeButtonSize - offset, closeButtonY + closeButtonSize - offset)
+                Gdip_DrawLine(this._pGraphics, pPen, closeButtonX + closeButtonSize - offset, closeButtonY + offset, closeButtonX + offset, closeButtonY + closeButtonSize - offset)
+                Gdip_DeletePen(pPen)
+            }
 
             ; draw divider (skip if outside visible area or last item)
             if index < this.menu.windows.Length {
@@ -666,6 +677,7 @@ class TaskSwitcher {
 
     static __OnMouseMove(wParam, lParam, msg, hwnd) {
         static tme := TrackMouseLeave(hwnd)   ; required for OnMouseLeave to work correctly
+
         if this._mouseLeft {
             this._mouseLeft := false
             DllCall('user32.dll\TrackMouseEvent', 'Ptr', tme)
@@ -694,8 +706,14 @@ class TaskSwitcher {
             }
         }
 
-        if newHover != this._mousedOver || newHoveredCloseButton != this._hoveredCloseButton {
-            this._mousedOver := newHover
+        if newHoveredCloseButton != 0 {
+            ; if the mouse is over any close button, ensure the corresponding
+            ; row is marked as hovered (used when not drawing every close button)
+            newHover := newHoveredCloseButton
+        }
+
+        if newHover != this._hoveredOver || newHoveredCloseButton != this._hoveredCloseButton {
+            this._hoveredOver := newHover
             this._hoveredCloseButton := newHoveredCloseButton
             this.__DrawMenu()
         }
@@ -936,14 +954,14 @@ class TaskSwitcher {
             }
         }
 
-        if newHover != this._mousedOver {
-            this._mousedOver := newHover
+        if newHover != this._hoveredOver {
+            this._hoveredOver := newHover
             this.__DrawMenu()
         }
     }
 
     static __OnMouseLeave(*) {
-        this._mousedOver := 0
+        this._hoveredOver := 0
         this._mouseLeft := true
         this.__DrawMenu()
     }
@@ -1104,7 +1122,7 @@ class TaskSwitcher {
         this._scrollSpeed := 20
         this._maxVisibleRows := 8
         this._hoveredCloseButton := 0
-        this._mousedOver := 0
+        this._hoveredOver := 0
         this._leftClicked := 0
         this._mouseLeft := true
         this._closeButtonRects := []

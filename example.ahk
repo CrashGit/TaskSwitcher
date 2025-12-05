@@ -24,7 +24,9 @@ TaskSwitcher({
     searchBackgroundColor: 0xFF333333,
     highlightTextColor: 0xFF00FF33,
     mouseHighlightTextColor: 0xFF999999,
-    escapeAlwaysClose: true
+    escapeAlwaysClose: true,
+    closeButtonSize: 50,
+    closeBackgroundColor: 0x00000000
 })
 
 TaskSwitcher.OnWindowActivate((window) {
