@@ -1,8 +1,12 @@
 #Requires AutoHotkey v2.0-a
 #SingleInstance
 
-Suspend(true)
+
+;============================================================================================
+; @Dependencies
+;============================================================================================
 #Include ..\..\lib\Gdip_All.ahk
+
 
 ;============================================================================================
 ; @Auto_Execute
@@ -10,53 +14,6 @@ Suspend(true)
 pToken := Gdip_Startup()
 OnExit((*) => Gdip_Shutdown(pToken))
 
-
-;============================================================================================
-; @Setup
-;============================================================================================
-; @example of changing options without modifying the class directly
-; see @options near beginning of TaskSwitcher class for all options you can modify
-TaskSwitcher({
-    backgroundColor: 0xFF111111,
-    bannerColor: 0xFF00BB00,
-    bannerText: 'Tasks',
-    alwaysHighlightFirst: true,
-    rowHighlightColor: 0xFF555555,
-    defaultSearchText: 'Search...',
-    searchBackgroundColor: 0xFF333333,
-    highlightTextColor: 0xFF00FF33,
-    mouseHighlightTextColor: 0xFF999999,
-    escapeAlwaysClose: true
-})
-
-TaskSwitcher.OnWindowActivate((window) {
-    list := ''
-    for prop, value in window.OwnProps() {
-        list .= Format('Name: {} - Value: {}`n', prop, value)
-    }
-
-    ToolTip(list)
-    SetTimer(ToolTip, -3000)
-})
-
-Suspend(false)
-
-/**
- * @Hotkeys
- * Pick your poison
- */
-; Simple toggle hotkey
-$F1::TaskSwitcher.OpenMenu()
-
-; Left and right control keys pressed together
-$<^RCtrl::TaskSwitcher.OpenMenuSorted()
-$>^LCtrl::TaskSwitcher.OpenMenuSorted()
-
-; Hotkey setup to replace AltTab behavior
-TaskSwitcher.AltTabReplacement()
-
-; Toggles the AltTabReplacement hotkeys
-$F2::TaskSwitcher.AltTabReplacement('Toggle')
 
 ;============================================================================================
 ; @TaskSwitcher
@@ -82,7 +39,6 @@ class TaskSwitcher {
     static escapeAlwaysClose := false
 
 
-
     static isOpen => WinExist('ahk_id' this.menu.Hwnd)
     static isActive => WinActive('ahk_id' this.menu.Hwnd)
     static hasMouseOver => (MouseGetPos(,, &win), win = TaskSwitcher.menu.Hwnd)
@@ -98,10 +54,23 @@ class TaskSwitcher {
         this.OpenMenu(true)
     }
 
+    static ToggleMenuSorted() {
+        this.ToggleMenu(true)
+    }
+
+    static ToggleMenu(sortedWindows := false) {
+        if WinExist('ahk_id ' this.menu.Hwnd) {
+            this.CloseMenu()
+            return
+        }
+
+        this.OpenMenu(sortedWindows)
+    }
+
     ; uses z-order of windows
     static OpenMenu(sortedWindows := false) {
         if WinExist('ahk_id ' this.menu.Hwnd) {
-            return this.CloseMenu()
+            return
         }
 
         this._sortedWindows := sortedWindows
