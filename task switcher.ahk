@@ -29,21 +29,34 @@ TaskSwitcher({
     escapeAlwaysClose: true
 })
 
+TaskSwitcher.OnWindowActivate((window) {
+    list := ''
+    for prop, value in window.OwnProps() {
+        list .= Format('Name: {} - Value: {}`n', prop, value)
+    }
+
+    ToolTip(list)
+    SetTimer(ToolTip, -3000)
+})
+
 Suspend(false)
 
 /**
  * @Hotkeys
  * Pick your poison
  */
-; Simple hotkey
+; Simple toggle hotkey
 $F1::TaskSwitcher.OpenMenu()
-$F2::TaskSwitcher.AltTabReplacement('Toggle')
+
+; Left and right control keys pressed together
 $<^RCtrl::TaskSwitcher.OpenMenuSorted()
 $>^LCtrl::TaskSwitcher.OpenMenuSorted()
 
 ; Hotkey setup to replace AltTab behavior
 TaskSwitcher.AltTabReplacement()
 
+; Toggles the AltTabReplacement hotkeys
+$F2::TaskSwitcher.AltTabReplacement('Toggle')
 
 ;============================================================================================
 ; @TaskSwitcher
@@ -80,12 +93,12 @@ class TaskSwitcher {
         }
     }
 
-    ; sorts the programs alphabetically
+    ; sorts the windows alphabetically
     static OpenMenuSorted() {
         this.OpenMenu(true)
     }
 
-    ; uses z-order of programs
+    ; uses z-order of windows
     static OpenMenu(sortedWindows := false) {
         if WinExist('ahk_id ' this.menu.Hwnd) {
             return this.CloseMenu()
@@ -126,18 +139,19 @@ class TaskSwitcher {
         this.__GDIP_Cleanup()
     }
 
-    static ActivateProgramAndCloseMenu() {
-        this.ActivateProgram()
+    static ActivateWindowAndCloseMenu() {
         this.CloseMenu()
+        this.ActivateWindow()
     }
 
-    static ActivateProgram() {
-        if this._selectedRow > 0 && this._selectedRow <= this.menu.windows.Length {
-            this.__ActivateWindow(this.menu.windows[this._selectedRow])
+    static ActivateWindow() {
+        window := this.menu.windows[this._selectedRow]
+            this._onWindowActivate(window)
+        if this.__ActivateWindow(window) {
         }
     }
 
-    static HighlightPreviousProgram() {
+    static SelectPreviousWindow() {
         if this._selectedRow > 1 {
             this._selectedRow -= 1
             this.__ScrollToSelectedRow()
@@ -149,7 +163,7 @@ class TaskSwitcher {
         this.__DrawMenu()
     }
 
-    static HighlightNextProgram() {
+    static SelectNextWindow() {
         if this._selectedRow < this.menu.windows.Length {
             this._selectedRow += 1
             this.__ScrollToSelectedRow()
@@ -159,6 +173,10 @@ class TaskSwitcher {
         }
 
         this.__DrawMenu()
+    }
+
+    static OnWindowActivate(Callback) {
+        this._onWindowActivate := (_, params*) => Callback(params*)
     }
 
     ; pass 'Off' if you ever want to disable those hotkeys after already being active
@@ -175,18 +193,18 @@ class TaskSwitcher {
         Hotkey('!Tab', (*) {
             altTabHotkeysEnabled := true
             TaskSwitcher.OpenMenu()
-            TaskSwitcher.HighlightNextProgram()
+            TaskSwitcher.SelectNextWindow()
         }, state)
 
         HotIf((*) => TaskSwitcher.isActive)
-        Hotkey('!Tab', (*) => TaskSwitcher.HighlightNextProgram(), state)
-        Hotkey('+!Tab', (*) => TaskSwitcher.HighlightPreviousProgram(), state)
+        Hotkey('!Tab', (*) => TaskSwitcher.SelectNextWindow(), state)
+        Hotkey('+!Tab', (*) => TaskSwitcher.SelectPreviousWindow(), state)
         HotIf((*) => altTabHotkeysEnabled)
         Hotkey('~*Alt up', (*) {
             ; prevents alt release from closing window if it wasn't opened with alt-tab method
             ; this is in case anyone uses hotkeys that allow something like alt+up/down to navigate, the menu will not close when releasing alt
             if altTabHotkeysEnabled {
-                TaskSwitcher.ActivateProgramAndCloseMenu()
+                TaskSwitcher.ActivateWindowAndCloseMenu()
                 altTabHotkeysEnabled := false
             }
         }, state)
@@ -254,7 +272,7 @@ class TaskSwitcher {
         if this._searchText != this.defaultSearchText && StrLen(this._searchText) > 0 {
             matches := []
             for win in this._allWindows {
-                if InStr(win.processName, this._searchText) || InStr(win.title, this._searchText) {
+                if InStr(win.name, this._searchText) || InStr(win.title, this._searchText) {
                     matches.Push(win)
                 }
             }
@@ -329,7 +347,7 @@ class TaskSwitcher {
         this._closeButtonRects := []  ; Track close button positions
 
         for index, window in this.menu.windows {
-            ; calculate Y position with scroll offset
+            ; calculate y position with scroll offset
             rowY := this._bannerHeight + ((index - 1) * rowWithDivider) - this._scrollOffset
 
             ; skip only if COMPLETELY outside visible area
@@ -367,10 +385,11 @@ class TaskSwitcher {
             default:
                 textColor := this.defaultTextColor
             }
+
             titleX := iconX + this._iconSize + 15
-            programOptions := 'x' titleX ' y' (rowY + 8) ' s18 Bold cFF' SubStr(Format('{:06X}', textColor), 3)
+            windowOptions := 'x' titleX ' y' (rowY + 8) ' s18 Bold cFF' SubStr(Format('{:06X}', textColor), 3)
             titleOptions := 'x' titleX ' y' (rowY + 28) ' s16 cFF' SubStr(Format('{:06X}', textColor), 3)
-            Gdip_TextToGraphics(this._pGraphics, window.processName, programOptions, 'Arial', this._maxWidth - titleX - this._marginX - 40, this._rowHeight)
+            Gdip_TextToGraphics(this._pGraphics, window.name, windowOptions, 'Arial', this._maxWidth - titleX - this._marginX - 40, this._rowHeight)
             Gdip_TextToGraphics(this._pGraphics, window.title, titleOptions, 'Arial', this._maxWidth - titleX - this._marginX - 40, this._rowHeight)
 
             ; draw close button (X)
@@ -453,16 +472,16 @@ class TaskSwitcher {
         windows := []
 
         for id in list {
-            processName := this.__GetProgramName(WinGetProcessPath(id))
+            processName := this.__GetWindowName(WinGetProcessPath(id))
             if processName = '' {
                 processName := StrSplit(WinGetProcessName(id), '.exe')[1]
             }
             processTitle := WinGetTitle(id)
 
             windows.Push({
-                hwnd:        id,
-                title:       processTitle,
-                processName: processName,
+                hwnd:   id,
+                title:  processTitle,
+                name:   processName,
             })
         }
 
@@ -478,7 +497,7 @@ class TaskSwitcher {
             while i <= windows.Length {
                 temp := windows[i]
                 j := i - 1
-                while j >= 1 and StrCompare(windows[j].processName, temp.processName) > 0 {
+                while j >= 1 and StrCompare(windows[j].name, temp.name) > 0 {
                     windows[j + 1] := windows[j]
                     j--
                 }
@@ -498,7 +517,7 @@ class TaskSwitcher {
         Gdip_SetTextRenderingHint(this._pGraphics, 3)
     }
 
-    static __GetProgramName(path) {
+    static __GetWindowName(path) {
         size := DllCall('version\GetFileVersionInfoSizeW', 'str', path, 'uint*', 0, 'uint')
         if !size {
             return
@@ -627,7 +646,6 @@ class TaskSwitcher {
             processPath := ProcessGetPath(ChildPID)
             defaultLogoPath := GetDefaultLogoPath(processPath)
             largestPath := GetLargestLogoPath(defaultLogoPath)
-
             return largestPath
         } catch as e {
             return
@@ -770,6 +788,7 @@ class TaskSwitcher {
         for rect in this._windowRects {
             if x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h {
                 if 'activate' . rect.actualIndex = this._leftClicked {
+                    this.CloseMenu()
                     this.__ActivateWindow(rect.window)
                 }
                 break
@@ -791,7 +810,7 @@ class TaskSwitcher {
             this._searchText := this.defaultSearchText
 
         case 'Enter':
-            this.ActivateProgram()
+            this.ActivateWindowAndCloseMenu()
             return
 
         case 'Backspace':
@@ -802,11 +821,11 @@ class TaskSwitcher {
             }
 
         case 'Up':
-            this.HighlightPreviousProgram()
+            this.SelectPreviousWindow()
             return
 
         case 'Down':
-            this.HighlightNextProgram()
+            this.SelectNextWindow()
             return
 
         case 'Space':
@@ -835,7 +854,7 @@ class TaskSwitcher {
         } else {
             matches := []
             for window in this._allWindows {
-                if InStr(window.processName, this._searchText) || InStr(window.title, this._searchText) {
+                if InStr(window.name, this._searchText) || InStr(window.title, this._searchText) {
                     matches.Push(window)
                 }
             }
@@ -970,9 +989,11 @@ class TaskSwitcher {
         this.__DrawMenu()
     }
 
-    static __ActivateWindow(window, *) {
-        this.CloseMenu()
-        WinActivate(window)
+    static __ActivateWindow(window) {
+        if this._selectedRow > 0 && this._selectedRow <= this.menu.windows.Length {
+            WinActivate(window)
+            return true
+        }
     }
 
     static __ScrollToSelectedRow() {
@@ -1110,5 +1131,6 @@ class TaskSwitcher {
         this._leftClicked := 0
         this._mouseLeft := true
         this._closeButtonRects := []
+        this._onWindowActivate := (*) => 0
     }
 }
